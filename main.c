@@ -9,12 +9,13 @@
 
 #define MAX_FIELD   512
 #define MAX_PATH   1024
-#define NUM_FIELDS    4
+#define NUM_FIELDS    5
 
 #define FIELD_TITLE   0
 #define FIELD_ARTIST  1
 #define FIELD_ALBUM   2
-#define FIELD_COVER   3
+#define FIELD_DATE    3
+#define FIELD_COVER   4
 
 #define CLR_HEADER    1
 #define CLR_LABEL     2
@@ -70,10 +71,12 @@ typedef struct {
     char  title [MAX_FIELD];
     char  artist[MAX_FIELD];
     char  album [MAX_FIELD];
+    char  date  [MAX_FIELD];
     char  cover_path[MAX_PATH];
     char  orig_title [MAX_FIELD];
     char  orig_artist[MAX_FIELD];
     char  orig_album [MAX_FIELD];
+    char  orig_date  [MAX_FIELD];
     char  orig_cover_path[MAX_PATH];
     int   has_cover;
     unsigned sample_rate;
@@ -274,7 +277,7 @@ static int flec_load(FlecState *st)
     FLAC__Metadata_Iterator *it = FLAC__metadata_iterator_new();
     FLAC__metadata_iterator_init(it, chain);
 
-    st->title[0] = st->artist[0] = st->album[0] = '\0';
+    st->title[0] = st->artist[0] = st->album[0] = st->date[0] = '\0';
     st->has_cover = 0;
 
     do {
@@ -297,6 +300,8 @@ static int flec_load(FlecState *st)
                     vc_get_value(e, "ARTIST", st->artist, MAX_FIELD);
                 else if (vc_field_match(e, "ALBUM"))
                     vc_get_value(e, "ALBUM", st->album, MAX_FIELD);
+                else if (vc_field_match(e, "DATE"))
+                    vc_get_value(e, "DATE", st->date, MAX_FIELD);
             }
         }
 
@@ -347,8 +352,9 @@ static int flec_save(FlecState *st)
         { "TITLE",  st->title  },
         { "ARTIST", st->artist },
         { "ALBUM",  st->album  },
+        { "DATE",   st->date   },
     };
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 4; i++) {
         FLAC__StreamMetadata_VorbisComment_Entry entry;
         if (FLAC__metadata_object_vorbiscomment_entry_from_name_value_pair(
                 &entry, tags[i].name, tags[i].val)) {
@@ -620,7 +626,7 @@ static void ebuf_delete_fwd(EditBuf *e)
 }
 
 static const char *field_labels[NUM_FIELDS] = {
-    "Title", "Artist", "Album", "Cover Art"
+    "Title", "Artist", "Album", "Date", "Cover Art"
 };
 
 int main(int argc, char **argv)
@@ -669,6 +675,7 @@ int main(int argc, char **argv)
     memcpy(st.orig_title,      st.title,      MAX_FIELD);
     memcpy(st.orig_artist,     st.artist,     MAX_FIELD);
     memcpy(st.orig_album,      st.album,      MAX_FIELD);
+    memcpy(st.orig_date,       st.date,       MAX_FIELD);
     memcpy(st.orig_cover_path, st.cover_path, MAX_PATH);
 
     initscr();
@@ -687,7 +694,7 @@ int main(int argc, char **argv)
     int  status_err = 0;
     int  running = 1;
     char *fields_ptr[NUM_FIELDS] = {
-        st.title, st.artist, st.album, st.cover_path
+        st.title, st.artist, st.album, st.date, st.cover_path
     };
 
     while (running) {
@@ -703,7 +710,7 @@ int main(int argc, char **argv)
         mvhline(4, 1, ACS_HLINE, cols - 2);
         attroff(COLOR_PAIR(CLR_BORDER));
 
-        int field_rows[NUM_FIELDS] = {6, 8, 10, 12};
+        int field_rows[NUM_FIELDS] = {6, 8, 10, 12, 14};
         int fcol   = 4;
         int fwidth = cols - 6;
 
@@ -714,6 +721,12 @@ int main(int argc, char **argv)
             int cur = (edit) ? ebuf.cursor : 0;
             draw_field(field_rows[i], fcol, fwidth,
                        field_labels[i], val, act, edit, cur);
+            if (i == FIELD_DATE && act && !edit) {
+                attron(COLOR_PAIR(CLR_HINT));
+                mvprintw(field_rows[i] + 1, fcol,
+                    "Format: YYYY  or  YYYY-MM  or  YYYY-MM-DD");
+                attroff(COLOR_PAIR(CLR_HINT));
+            }
         }
 
         {
@@ -796,6 +809,7 @@ int main(int argc, char **argv)
                             st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
                                         strcmp(st.artist,     st.orig_artist)     != 0 ||
                                         strcmp(st.album,      st.orig_album)      != 0 ||
+                                        strcmp(st.date,       st.orig_date)       != 0 ||
                                         strcmp(st.cover_path, st.orig_cover_path) != 0);
                             editing  = 0;
                             snprintf(status_msg, sizeof(status_msg),
@@ -809,6 +823,7 @@ int main(int argc, char **argv)
                     st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
                                 strcmp(st.artist,     st.orig_artist)     != 0 ||
                                 strcmp(st.album,      st.orig_album)      != 0 ||
+                                strcmp(st.date,       st.orig_date)       != 0 ||
                                 strcmp(st.cover_path, st.orig_cover_path) != 0);
                     editing  = 0;
                     snprintf(status_msg, sizeof(status_msg),
@@ -921,6 +936,7 @@ int main(int argc, char **argv)
                 st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
                             strcmp(st.artist,     st.orig_artist)     != 0 ||
                             strcmp(st.album,      st.orig_album)      != 0 ||
+                            strcmp(st.date,       st.orig_date)       != 0 ||
                             strcmp(st.cover_path, st.orig_cover_path) != 0);
                 status_msg[0] = '\0';
             }
