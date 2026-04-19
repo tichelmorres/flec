@@ -1,6 +1,6 @@
 # flec
 
-**FL**ac **E**ditor in **C**. A terminal UI for editing FLAC file metadata.
+**FL**ac **E**ditor in **C**.
 
 ## Dependencies
 
@@ -50,4 +50,23 @@ flec = {
   url = "github:tichelmorres/flec";
   inputs.nixpkgs.follows = "nixpkgs";
 };
+```
+
+Then pass it through `specialArgs` in your outputs and add it to `environment.systemPackages`:
+
+```nix
+outputs = { nixpkgs, flec, ... }:
+  let system = "x86_64-linux"; in {
+    nixosConfigurations.hostname = nixpkgs.lib.nixosSystem {
+      inherit system;
+      specialArgs = { inherit flec; };
+      modules = [
+        ({ pkgs, ... }: {
+          environment.systemPackages = [
+            flec.packages.${pkgs.stdenv.hostPlatform.system}.default
+          ];
+        })
+      ];
+    };
+  };
 ```
