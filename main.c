@@ -4,15 +4,19 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <signal.h>
 #include <termios.h>
 #include <unistd.h>
+#include <fcntl.h>
 #include <ncurses.h>
 #include <FLAC/metadata.h>
 
 #define MAX_FIELD   512
 #define MAX_PATH   1024
 #define NUM_FIELDS    5
+#define MAX_DIRS     32
+#define CMD_BUF    16384
 
 #define FIELD_TITLE   0
 #define FIELD_ARTIST  1
@@ -67,6 +71,9 @@
     "hl:#77c686,hl+:#77c686,info:#fdf3b6,marker:#f43841," \
     "pointer:#57afc0,prompt:#9e95c7,spinner:#57afc0," \
     "border:#453d41,header:#57afc0'"
+
+#define FZF_LAYOUT \
+    " --height=100%% --border=sharp --margin=10%%,15%% --layout=reverse"
 
 #define MY_KEY_CTRL_LEFT        (KEY_MAX + 1)
 #define MY_KEY_CTRL_RIGHT       (KEY_MAX + 2)
@@ -217,49 +224,186 @@ static int fzf_finish(char *buf, char *out, size_t outsz)
     return 1;
 }
 
-static int pick_file_fzf(char *out, size_t outsz, int music_only)
+static int fzf_available(void)
+{
+    FILE *f = popen("fzf --version >/dev/null 2>&1", "r");
+    if (!f) return 0;
+    return pclose(f) == 0;
+}
+
+static void expand_tilde(char *path, size_t sz);
+
+static int run_fzf_cover_tty(char *out, size_t outsz,
+                              char (*dirs)[MAX_PATH], int ndirs)
 {
     const char *home = getenv("HOME");
     if (!home || home[0] == '\0') home = "";
 
-    char cmd[2048];
-    if (music_only) {
-        snprintf(cmd, sizeof(cmd),
-            "find \"%s/Music\" -maxdepth 8 -iname '*.flac' 2>/dev/null"
-            " | sort -u"
-            " | sed 's|^%s/|~/|'"
-            " | fzf " FZF_COLORS " --prompt='Select FLAC (~/Music/): '"
-            " --height=40%% --border",
-            home, home);
+    char tmpfile[] = "/tmp/flec_XXXXXX";
+    int tmpfd = mkstemp(tmpfile);
+    if (tmpfd < 0) return 0;
+    close(tmpfd);
+
+    char find_args[CMD_BUF / 2];
+    find_args[0] = '\0';
+
+    char prompt[128];
+    char prompt_dir[64];
+
+    if (ndirs == 0) {
+        snprintf(find_args, sizeof(find_args), "\"%s\"", home);
+        snprintf(prompt, sizeof(prompt), "Select cover image: ");
     } else {
-        snprintf(cmd, sizeof(cmd),
-            "find \"%s\" . -maxdepth 6 -iname '*.flac' 2>/dev/null"
-            " | sort -u"
-            " | fzf " FZF_COLORS " --prompt='Select FLAC file: '"
-            " --height=40%% --border",
-            home);
-    }
-
-    FILE *p = popen(cmd, "r");
-    if (!p) return 0;
-
-    char buf[MAX_PATH] = "";
-    int got = (fgets(buf, sizeof(buf), p) != NULL);
-    pclose(p);
-
-    if (!got) return 0;
-    if (!fzf_finish(buf, out, outsz)) return 0;
-
-    if (music_only && out[0] == '~' && out[1] == '/') {
-        size_t hlen = strlen(home);
-        size_t rlen = strlen(out + 1);
-        if (hlen + rlen < outsz) {
-            memmove(out + hlen, out + 1, rlen + 1);
-            memcpy(out, home, hlen);
+        for (int i = 0; i < ndirs; i++) {
+            char exp[MAX_PATH];
+            strncpy(exp, dirs[i], MAX_PATH - 1);
+            exp[MAX_PATH - 1] = '\0';
+            expand_tilde(exp, MAX_PATH);
+            size_t cur = strlen(find_args);
+            snprintf(find_args + cur, sizeof(find_args) - cur,
+                     "\"%s\" ", exp);
+        }
+        if (ndirs == 1) {
+            strncpy(prompt_dir, dirs[0], sizeof(prompt_dir) - 1);
+            prompt_dir[sizeof(prompt_dir) - 1] = '\0';
+            snprintf(prompt, sizeof(prompt), "Select cover image (%s): ", prompt_dir);
+        } else {
+            snprintf(prompt, sizeof(prompt), "Select cover image (%d dirs): ", ndirs);
         }
     }
 
-    return 1;
+    char cmd[CMD_BUF];
+    snprintf(cmd, sizeof(cmd),
+        "find %s -maxdepth 8 "
+        "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png'"
+        "   -o -iname '*.bmp'  -o -iname '*.webp' \\)"
+        " 2>/dev/null"
+        " | sort -u"
+        " | fzf " FZF_COLORS " --prompt='%s'"
+        FZF_LAYOUT,
+        find_args, prompt);
+
+    fflush(stdout);
+    ssize_t bytes_written = write(STDOUT_FILENO, "\033[2J\033[H", 7);
+    (void)bytes_written;
+
+    int ttyfd = open("/dev/tty", O_RDWR);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        if (ttyfd >= 0) { dup2(ttyfd, STDIN_FILENO);  close(ttyfd); }
+        int outfd = open(tmpfile, O_WRONLY | O_TRUNC);
+        if (outfd >= 0) { dup2(outfd, STDOUT_FILENO); close(outfd); }
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) { dup2(devnull, STDERR_FILENO); close(devnull); }
+        execl("/bin/sh", "sh", "-c", cmd, NULL);
+        _exit(1);
+    }
+
+    if (ttyfd >= 0) close(ttyfd);
+
+    int got = 0;
+    if (pid > 0) {
+        int status;
+        waitpid(pid, &status, 0);
+        curs_set(1);
+        FILE *f = fopen(tmpfile, "r");
+        if (f) {
+            char buf[MAX_PATH] = "";
+            got = (fgets(buf, sizeof(buf), f) != NULL);
+            fclose(f);
+            if (got)
+                got = fzf_finish(buf, out, outsz);
+        }
+    }
+
+    unlink(tmpfile);
+    return got;
+}
+
+static int run_fzf_tty(char *out, size_t outsz,
+                        char (*dirs)[MAX_PATH], int ndirs)
+{
+    const char *home = getenv("HOME");
+    if (!home || home[0] == '\0') home = "";
+
+    char tmpfile[] = "/tmp/flec_XXXXXX";
+    int tmpfd = mkstemp(tmpfile);
+    if (tmpfd < 0) return 0;
+    close(tmpfd);
+
+    char find_args[CMD_BUF / 2];
+    find_args[0] = '\0';
+
+    char prompt[128];
+    char prompt_dir[64];
+
+    if (ndirs == 0) {
+        snprintf(find_args, sizeof(find_args), "\"%s\" .", home);
+        snprintf(prompt, sizeof(prompt), "Select FLAC file: ");
+    } else {
+        for (int i = 0; i < ndirs; i++) {
+            char exp[MAX_PATH];
+            strncpy(exp, dirs[i], MAX_PATH - 1);
+            exp[MAX_PATH - 1] = '\0';
+            expand_tilde(exp, MAX_PATH);
+            size_t cur = strlen(find_args);
+            snprintf(find_args + cur, sizeof(find_args) - cur,
+                     "\"%s\" ", exp);
+        }
+        if (ndirs == 1) {
+            strncpy(prompt_dir, dirs[0], sizeof(prompt_dir) - 1);
+            prompt_dir[sizeof(prompt_dir) - 1] = '\0';
+            snprintf(prompt, sizeof(prompt), "Select FLAC (%s): ", prompt_dir);
+        } else {
+            snprintf(prompt, sizeof(prompt), "Select FLAC (%d dirs): ", ndirs);
+        }
+    }
+
+    char cmd[CMD_BUF];
+    snprintf(cmd, sizeof(cmd),
+        "find %s -maxdepth 8 -iname '*.flac' 2>/dev/null"
+        " | sort -u"
+        " | fzf " FZF_COLORS " --prompt='%s'"
+        FZF_LAYOUT,
+        find_args, prompt);
+
+    fflush(stdout);
+    ssize_t bytes_written = write(STDOUT_FILENO, "\033[2J\033[H", 7);
+    (void)bytes_written;
+
+    int ttyfd = open("/dev/tty", O_RDWR);
+
+    pid_t pid = fork();
+    if (pid == 0) {
+        if (ttyfd >= 0) { dup2(ttyfd, STDIN_FILENO); close(ttyfd); }
+        int outfd = open(tmpfile, O_WRONLY | O_TRUNC);
+        if (outfd >= 0) { dup2(outfd, STDOUT_FILENO); close(outfd); }
+        int devnull = open("/dev/null", O_WRONLY);
+        if (devnull >= 0) { dup2(devnull, STDERR_FILENO); close(devnull); }
+        execl("/bin/sh", "sh", "-c", cmd, NULL);
+        _exit(1);
+    }
+
+    if (ttyfd >= 0) close(ttyfd);
+
+    int got = 0;
+    if (pid > 0) {
+        int status;
+        waitpid(pid, &status, 0);
+        curs_set(1);
+        FILE *f = fopen(tmpfile, "r");
+        if (f) {
+            char buf[MAX_PATH] = "";
+            got = (fgets(buf, sizeof(buf), f) != NULL);
+            fclose(f);
+            if (got)
+                got = fzf_finish(buf, out, outsz);
+        }
+    }
+
+    unlink(tmpfile);
+    return got;
 }
 
 static void expand_tilde(char *path, size_t sz)
@@ -283,15 +427,14 @@ static const char *validate_image_path(const char *path)
         return "That's a directory, not an image file";
     const char *ext = strrchr(path, '.');
     if (!ext)
-        return "No extension – expected jpg / png / gif / bmp / webp";
+        return "No extension – expected jpg / png / bmp / webp";
     ext++;
     if (strcasecmp(ext, "jpg")  != 0 &&
         strcasecmp(ext, "jpeg") != 0 &&
         strcasecmp(ext, "png")  != 0 &&
-        strcasecmp(ext, "gif")  != 0 &&
         strcasecmp(ext, "bmp")  != 0 &&
         strcasecmp(ext, "webp") != 0)
-        return "Unsupported format – expected jpg / png / gif / bmp / webp";
+        return "Unsupported format – expected jpg / png / bmp / webp";
     return NULL;
 }
 
@@ -602,44 +745,67 @@ static void draw_field(int row, int col, int width,
     }
 }
 
-static void draw_status(int rows, int cols, const char *msg, int is_error)
+static void draw_status(int rows, int cols, const char *msg, int status_type)
 {
-    attron(COLOR_PAIR(is_error ? CLR_ERROR : CLR_STATUS) | A_BOLD);
-    int len = strlen(msg);
+    int pair = (status_type == 1) ? CLR_ERROR
+             : (status_type == 2) ? CLR_WARN
+             : CLR_STATUS;
+    attron(COLOR_PAIR(pair) | A_BOLD);
+    int avail = cols - 2;
+    int len = (int)strlen(msg);
     int x = (cols - len) / 2;
     if (x < 1) x = 1;
-    mvhline(rows - 2, 1, ' ', cols - 2);
-    mvprintw(rows - 2, x, "%s", msg);
-    attroff(COLOR_PAIR(is_error ? CLR_ERROR : CLR_STATUS) | A_BOLD);
+    int print_len = avail - (x - 1);
+    if (print_len < 1) print_len = 1;
+    mvhline(rows - 2, 1, ' ', avail);
+    mvprintw(rows - 2, x, "%.*s", print_len, msg);
+    attroff(COLOR_PAIR(pair) | A_BOLD);
 }
 
 static void draw_warn(int rows, int cols, const char *msg)
 {
     attron(COLOR_PAIR(CLR_WARN) | A_BOLD);
-    int len = strlen(msg);
+    int avail = cols - 2;
+    int len = (int)strlen(msg);
     int x = (cols - len) / 2;
     if (x < 1) x = 1;
-    mvhline(rows - 2, 1, ' ', cols - 2);
-    mvprintw(rows - 2, x, "%s", msg);
+    int print_len = avail - (x - 1);
+    if (print_len < 1) print_len = 1;
+    mvhline(rows - 2, 1, ' ', avail);
+    mvprintw(rows - 2, x, "%.*s", print_len, msg);
     attroff(COLOR_PAIR(CLR_WARN) | A_BOLD);
 }
 
-static void draw_cover_indicator(int row, int col, const FlecState *st)
+static void draw_cover_indicator(int row, int col, int cols, const FlecState *st)
 {
     attron(COLOR_PAIR(CLR_LABEL) | A_BOLD);
     mvprintw(row, col, "%-10s", "Cover Art");
     attroff(COLOR_PAIR(CLR_LABEL) | A_BOLD);
 
     int vstart = col + 10;
+    int avail = cols - vstart - 1;
+    if (avail < 1) return;
+
     if (st->cover_path[0] != '\0') {
+        int path_avail = avail - 5;
         attron(COLOR_PAIR(CLR_ACTIVE));
-        mvprintw(row, vstart, "New: %-30s", st->cover_path);
+        if (path_avail <= 3) {
+            mvprintw(row, vstart, "%.*s", avail, "New: ...");
+        } else {
+            int plen = (int)strlen(st->cover_path);
+            if (plen > path_avail) {
+                mvprintw(row, vstart, "New: ...%s",
+                         st->cover_path + plen - (path_avail - 3));
+            } else {
+                mvprintw(row, vstart, "New: %-*s", path_avail, st->cover_path);
+            }
+        }
         attroff(COLOR_PAIR(CLR_ACTIVE));
     } else {
+        const char *label = st->has_cover ? "[Embedded cover present]"
+                                          : "[No cover art]";
         attron(st->has_cover ? COLOR_PAIR(CLR_HINT) : COLOR_PAIR(CLR_VALUE));
-        mvprintw(row, vstart, "%s",
-                 st->has_cover ? "[Embedded cover present]"
-                               : "[No cover art]");
+        mvprintw(row, vstart, "%.*s", avail, label);
         attroff(st->has_cover ? COLOR_PAIR(CLR_HINT) : COLOR_PAIR(CLR_VALUE));
     }
 }
@@ -801,31 +967,132 @@ int main(int argc, char **argv)
     FlecState st;
     memset(&st, 0, sizeof(st));
 
-    int music_only  = 0;
-    const char *file_arg = NULL;
+    char flac_dirs[MAX_DIRS][MAX_PATH];
+    int  flac_dirs_count = 0;
+    char cover_dirs[MAX_DIRS][MAX_PATH];
+    int  cover_dirs_count = 0;
+    char no_fzf_path[MAX_PATH] = "";
+
+    typedef enum { MODE_NONE, MODE_FLAC_DIRS, MODE_COVER_DIRS } ParseMode;
+    ParseMode mode = MODE_NONE;
 
     for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-m") == 0 || strcmp(argv[i], "--music") == 0) {
-            music_only = 1;
-        } else if (argv[i][0] != '-') {
-            file_arg = argv[i];
-        } else {
+        if (strcmp(argv[i], "-f")     == 0 ||
+            strcmp(argv[i], "--flac") == 0) {
+            mode = MODE_FLAC_DIRS;
+
+        } else if (strcmp(argv[i], "-c")      == 0 ||
+                   strcmp(argv[i], "--cover") == 0) {
+            mode = MODE_COVER_DIRS;
+
+        } else if (strcmp(argv[i], "-nf")       == 0 ||
+                   strcmp(argv[i], "--no-fzf") == 0) {
+            i++;
+            if (i >= argc || argv[i][0] == '-') {
+                fprintf(stderr,
+                    "Error: %s requires exactly one path argument.\n"
+                    "  Example: flec -nf \"~/Music/file.flac\"\n",
+                    argv[i - 1]);
+                return 1;
+            }
+            strncpy(no_fzf_path, argv[i], MAX_PATH - 1);
+            no_fzf_path[MAX_PATH - 1] = '\0';
+            mode = MODE_NONE;
+
+        } else if (argv[i][0] == '-') {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             fprintf(stderr,
-                    "Usage: flec [-m|--music] [file.flac]\n"
-                    "  -m, --music   restrict fzf search to ~/Music\n");
+                "Usage: flec [OPTIONS]\n"
+                "  -f,  --flac   <dir>...  directories to search for FLAC files\n"
+                "  -c,  --cover  <dir>...  directories to search for cover images\n"
+                "  -nf, --no-fzf <path>    open this FLAC file directly\n");
+            return 1;
+
+        } else {
+
+            if (mode == MODE_FLAC_DIRS) {
+                if (flac_dirs_count >= MAX_DIRS) {
+                    fprintf(stderr, "Error: too many -f directories (max %d).\n",
+                            MAX_DIRS);
+                    return 1;
+                }
+                strncpy(flac_dirs[flac_dirs_count], argv[i], MAX_PATH - 1);
+                flac_dirs[flac_dirs_count][MAX_PATH - 1] = '\0';
+                flac_dirs_count++;
+            } else if (mode == MODE_COVER_DIRS) {
+                if (cover_dirs_count >= MAX_DIRS) {
+                    fprintf(stderr, "Error: too many -c directories (max %d).\n",
+                            MAX_DIRS);
+                    return 1;
+                }
+                strncpy(cover_dirs[cover_dirs_count], argv[i], MAX_PATH - 1);
+                cover_dirs[cover_dirs_count][MAX_PATH - 1] = '\0';
+                cover_dirs_count++;
+            } else {
+                fprintf(stderr,
+                    "Unexpected argument: %s\n"
+                    "Use -f to specify FLAC directories or -nf for a direct path.\n",
+                    argv[i]);
+                return 1;
+            }
+        }
+    }
+
+    for (int i = 0; i < flac_dirs_count; i++) {
+        char exp[MAX_PATH];
+        strncpy(exp, flac_dirs[i], MAX_PATH - 1);
+        exp[MAX_PATH - 1] = '\0';
+        expand_tilde(exp, MAX_PATH);
+        struct stat ds;
+        if (stat(exp, &ds) != 0) {
+            fprintf(stderr, "Error: -f directory not found: '%s'\n", flac_dirs[i]);
+            return 1;
+        }
+        if (!S_ISDIR(ds.st_mode)) {
+            fprintf(stderr, "Error: -f path is not a directory: '%s'\n", flac_dirs[i]);
             return 1;
         }
     }
 
-    if (file_arg) {
-        snprintf(st.flac_path, MAX_PATH, "%s", file_arg);
+    for (int i = 0; i < cover_dirs_count; i++) {
+        char exp[MAX_PATH];
+        strncpy(exp, cover_dirs[i], MAX_PATH - 1);
+        exp[MAX_PATH - 1] = '\0';
+        expand_tilde(exp, MAX_PATH);
+        struct stat ds;
+        if (stat(exp, &ds) != 0) {
+            fprintf(stderr, "Error: -c directory not found: '%s'\n", cover_dirs[i]);
+            return 1;
+        }
+        if (!S_ISDIR(ds.st_mode)) {
+            fprintf(stderr, "Error: -c path is not a directory: '%s'\n", cover_dirs[i]);
+            return 1;
+        }
+    }
+
+    if (no_fzf_path[0] != '\0') {
+
+        expand_tilde(no_fzf_path, MAX_PATH);
+        struct stat fs;
+        if (stat(no_fzf_path, &fs) != 0) {
+            fprintf(stderr, "Error: -nf path not found: '%s'\n", no_fzf_path);
+            return 1;
+        }
+        if (!S_ISREG(fs.st_mode)) {
+            fprintf(stderr, "Error: -nf path is not a regular file: '%s'\n",
+                    no_fzf_path);
+            return 1;
+        }
+        snprintf(st.flac_path, MAX_PATH, "%s", no_fzf_path);
     } else {
-        if (!pick_file_fzf(st.flac_path, MAX_PATH, music_only)) {
+
+        if (!run_fzf_tty(st.flac_path, MAX_PATH, flac_dirs, flac_dirs_count)) {
             fprintf(stderr,
-                    "Usage: flec [-m|--music] [file.flac]\n"
-                    "  -m, --music   restrict fzf search to ~/Music\n"
-                    "  (fzf must be installed for interactive picking)\n");
+                "Usage: flec [OPTIONS]\n"
+                "  -f,  --flac   <dir>...  directories to search for FLAC files\n"
+                "  -c,  --cover  <dir>...  directories to search for cover images\n"
+                "  -nf, --no-fzf <path>    open this FLAC file directly\n"
+                "  (fzf must be installed for interactive picking)\n");
             return 1;
         }
     }
@@ -861,6 +1128,7 @@ int main(int argc, char **argv)
 
     if (has_colors()) init_colors();
 
+    int have_fzf = fzf_available();
     int selected = 0;
     int editing  = 0;
     EditBuf ebuf;
@@ -923,12 +1191,18 @@ int main(int argc, char **argv)
                     mvaddstr(field_rows[i], fcol - 2, SYM_ACTIVE_ARROW);
                     attroff(COLOR_PAIR(CLR_HINT) | A_BOLD);
                 }
-                draw_cover_indicator(field_rows[i], fcol, &st);
+                draw_cover_indicator(field_rows[i], fcol, cols, &st);
                 if (act) {
                     attron(COLOR_PAIR(CLR_HINT));
-                    mvprintw(field_rows[i] + 1, fcol,
-                        "Supported image extensions:"
-                        "  (jpg / png / gif / bmp / webp)");
+                    if (have_fzf) {
+                        mvprintw(field_rows[i] + 1, fcol,
+                            "Press Enter to browse with fzf"
+                            "  (jpg / png / bmp / webp)");
+                    } else {
+                        mvprintw(field_rows[i] + 1, fcol,
+                            "Supported image extensions:"
+                            "  (jpg / png / bmp / webp)");
+                    }
                     attroff(COLOR_PAIR(CLR_HINT));
                 }
             }
@@ -1027,7 +1301,10 @@ int main(int argc, char **argv)
                     status_err = 0;
                 }
                 if (ch == 19 && !status_err) {
-                    if (flec_save(&st)) {
+                    if (!st.dirty) {
+                        snprintf(status_msg, sizeof(status_msg), "No changes to be saved.");
+                        status_err = 2;
+                    } else if (flec_save(&st)) {
                         snprintf(status_msg, sizeof(status_msg), "%s", SYM_SAVE_OK);
                         status_err = 0;
                     } else {
@@ -1182,12 +1459,42 @@ int main(int argc, char **argv)
         case 'A':
         case 'e':
         case 'E':
-            ebuf_init(&ebuf, fields_ptr[selected]);
-            editing = 1;
-            status_msg[0] = '\0';
+            if (selected == FIELD_COVER && have_fzf) {
+                char img_path[MAX_PATH] = "";
+                int picked = run_fzf_cover_tty(img_path, MAX_PATH,
+                                               cover_dirs, cover_dirs_count);
+                clearok(stdscr, TRUE);
+                if (picked && img_path[0] != '\0') {
+                    const char *err = validate_image_path(img_path);
+                    if (err) {
+                        snprintf(status_msg, sizeof(status_msg), "[!!] %s", err);
+                        status_err = 1;
+                    } else {
+                        strncpy(st.cover_path, img_path, MAX_PATH - 1);
+                        st.cover_path[MAX_PATH - 1] = '\0';
+                        st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
+                                    strcmp(st.artist,     st.orig_artist)     != 0 ||
+                                    strcmp(st.album,      st.orig_album)      != 0 ||
+                                    strcmp(st.date,       st.orig_date)       != 0 ||
+                                    strcmp(st.cover_path, st.orig_cover_path) != 0);
+                        snprintf(status_msg, sizeof(status_msg),
+                                 "Cover path set successfully.");
+                        status_err = 0;
+                    }
+                }
+            } else {
+                ebuf_init(&ebuf, fields_ptr[selected]);
+                editing = 1;
+                status_msg[0] = '\0';
+            }
             break;
 
         case 19:
+            if (!st.dirty) {
+                snprintf(status_msg, sizeof(status_msg), "No changes to be saved.");
+                status_err = 2;
+                break;
+            }
             snprintf(status_msg, sizeof(status_msg), "Saving...");
             status_err = 0;
             refresh();
@@ -1210,6 +1517,44 @@ int main(int argc, char **argv)
                             strcmp(st.date,       st.orig_date)       != 0 ||
                             strcmp(st.cover_path, st.orig_cover_path) != 0);
                 status_msg[0] = '\0';
+            }
+            break;
+
+        case 'r':
+        case 'R':
+            if (st.dirty) {
+                draw_warn(rows, cols,
+                    "Unsaved changes! Press R again to discard, any key to cancel.");
+                refresh();
+                int rc2 = getch();
+                if (rc2 != 'r' && rc2 != 'R') break;
+            }
+            {
+                char new_path[MAX_PATH] = "";
+                int picked = run_fzf_tty(new_path, MAX_PATH,
+                                         flac_dirs, flac_dirs_count);
+                clearok(stdscr, TRUE);
+                if (picked && new_path[0] != '\0') {
+                    memset(&st, 0, sizeof(st));
+                    snprintf(st.flac_path, MAX_PATH, "%s", new_path);
+                    make_display_path(st.flac_path, st.display_path, MAX_PATH);
+                    if (flec_load(&st)) {
+                        memcpy(st.orig_title,      st.title,      MAX_FIELD);
+                        memcpy(st.orig_artist,     st.artist,     MAX_FIELD);
+                        memcpy(st.orig_album,      st.album,      MAX_FIELD);
+                        memcpy(st.orig_date,       st.date,       MAX_FIELD);
+                        memcpy(st.orig_cover_path, st.cover_path, MAX_PATH);
+                        selected   = 0;
+                        editing    = 0;
+                        status_err = 0;
+                        snprintf(status_msg, sizeof(status_msg),
+                                 "Now viewing: %s", st.display_path);
+                    } else {
+                        snprintf(status_msg, sizeof(status_msg),
+                                 "[!!] Cannot read FLAC metadata from selected file.");
+                        status_err = 1;
+                    }
+                }
             }
             break;
 

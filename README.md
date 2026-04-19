@@ -17,23 +17,60 @@ $ ./nob
 
 ## Usage
 
+Run with no arguments to browse all FLAC files under `$HOME` with fzf:
+
 ```console
-$ ./flec [file.flac]
-$ ./flec -m            # restrict fzf search to ~/Music
+$ ./flec
 ```
 
-If no file is given, fzf is launched to pick one interactively.
+Narrow the fzf search to one or more specific directories:
+
+```console
+$ ./flec -f "~/Music"
+$ ./flec -f "~/Downloads" "~/Music" "/home/user/My Songs"
+```
+
+Also specify where fzf should look for cover images:
+
+```console
+$ ./flec -f "~/Music" -c "~/Pictures" "/home/user/CoverArts"
+```
+
+Skip fzf entirely and open a file directly:
+
+```console
+$ ./flec -nf "~/Music/Pink Floyd/Time.flac"
+```
+
+All flags can be combined and given in any order:
+
+```console
+$ ./flec -nf "~/Music/Pink Floyd/Time.flac" -c "~/Pictures"
+```
+
+## Flags
+
+| Flag                       | Description                                                   |
+|----------------------------|---------------------------------------------------------------|
+| `-f`, `--flac` `<dir>...`  | Directories to search for FLAC files (multiple paths allowed) |
+| `-c`, `--cover` `<dir>...` | Directories to search for cover arts (multiple paths allowed) |
+| `-nf`, `--no-fzf` `<path>` | Skip fzf at start and open a specific FLAC file directly      |
+
+Flags can be combined in any order. If `-f` is omitted, fzf searches `$HOME` by default. If `-c` is omitted, fzf searches `$HOME` for cover images by default.
 
 ## Keybinds
 
-| Key                | Action                     |
-|--------------------|----------------------------|
-| `j` / `k` / arrows | Navigate fields            |
-| `Enter` / `e`      | Edit field                 |
-| `Escape`           | Cancel edit                |
-| `Ctrl+S`           | Save                       |
-| `Ctrl+X`           | Discard pending cover path |
-| `q`                | Quit                       |
+| Key                 | Action                      |
+|---------------------|-----------------------------|
+| `j` / `k` / arrows  | Navigate fields             |
+| `Enter` / `e` / `a` | Edit field                  |
+| `Escape`            | Cancel edit                 |
+| `Ctrl+S`            | Save                        |
+| `Ctrl+X`            | Discard pending cover path  |
+| `r`                 | Search another file to edit |
+| `q`                 | Quit                        |
+
+Keybinds are case insensitive.
 
 ## Nix
 
