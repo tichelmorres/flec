@@ -71,6 +71,10 @@ typedef struct {
     char  artist[MAX_FIELD];
     char  album [MAX_FIELD];
     char  cover_path[MAX_PATH];
+    char  orig_title [MAX_FIELD];
+    char  orig_artist[MAX_FIELD];
+    char  orig_album [MAX_FIELD];
+    char  orig_cover_path[MAX_PATH];
     int   has_cover;
     unsigned sample_rate;
     unsigned channels;
@@ -662,6 +666,10 @@ int main(int argc, char **argv)
                 st.flac_path);
         return 1;
     }
+    memcpy(st.orig_title,      st.title,      MAX_FIELD);
+    memcpy(st.orig_artist,     st.artist,     MAX_FIELD);
+    memcpy(st.orig_album,      st.album,      MAX_FIELD);
+    memcpy(st.orig_cover_path, st.cover_path, MAX_PATH);
 
     initscr();
     cbreak();
@@ -785,7 +793,10 @@ int main(int argc, char **argv)
                         } else {
                             strncpy(st.cover_path, ebuf.buf, MAX_PATH - 1);
                             st.cover_path[MAX_PATH - 1] = '\0';
-                            st.dirty = 1;
+                            st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
+                                        strcmp(st.artist,     st.orig_artist)     != 0 ||
+                                        strcmp(st.album,      st.orig_album)      != 0 ||
+                                        strcmp(st.cover_path, st.orig_cover_path) != 0);
                             editing  = 0;
                             snprintf(status_msg, sizeof(status_msg),
                                      "Cover path set successfully.");
@@ -795,7 +806,10 @@ int main(int argc, char **argv)
                 } else {
                     strncpy(fields_ptr[selected], ebuf.buf, MAX_FIELD - 1);
                     fields_ptr[selected][MAX_FIELD - 1] = '\0';
-                    st.dirty = 1;
+                    st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
+                                strcmp(st.artist,     st.orig_artist)     != 0 ||
+                                strcmp(st.album,      st.orig_album)      != 0 ||
+                                strcmp(st.cover_path, st.orig_cover_path) != 0);
                     editing  = 0;
                     snprintf(status_msg, sizeof(status_msg),
                              "%s field set successfully.", field_labels[selected]);
@@ -902,7 +916,12 @@ int main(int argc, char **argv)
 
         case 24:
             if (selected == FIELD_COVER) {
-                st.cover_path[0] = '\0';
+                strncpy(st.cover_path, st.orig_cover_path, MAX_PATH - 1);
+                st.cover_path[MAX_PATH - 1] = '\0';
+                st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
+                            strcmp(st.artist,     st.orig_artist)     != 0 ||
+                            strcmp(st.album,      st.orig_album)      != 0 ||
+                            strcmp(st.cover_path, st.orig_cover_path) != 0);
                 status_msg[0] = '\0';
             }
             break;
