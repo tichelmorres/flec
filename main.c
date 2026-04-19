@@ -1,8 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
 #include <stdint.h>
 #include <sys/stat.h>
+#include <signal.h>
+#include <termios.h>
 #include <unistd.h>
 #include <ncurses.h>
 #include <FLAC/metadata.h>
@@ -65,6 +68,15 @@
     "pointer:#57afc0,prompt:#9e95c7,spinner:#57afc0," \
     "border:#453d41,header:#57afc0'"
 
+#define MY_KEY_CTRL_LEFT        (KEY_MAX + 1)
+#define MY_KEY_CTRL_RIGHT       (KEY_MAX + 2)
+#define MY_KEY_CTRL_SHIFT_LEFT  (KEY_MAX + 3)
+#define MY_KEY_CTRL_SHIFT_RIGHT (KEY_MAX + 4)
+
+#define CLR_SELECT          10
+#define THEME_SELECT_FG     COLOR_BLACK
+#define THEME_SELECT_BG     COLOR_CYAN
+
 typedef struct {
     char  flac_path[MAX_PATH];
     char  display_path[MAX_PATH];
@@ -86,11 +98,30 @@ typedef struct {
     int   dirty;
 } FlecState;
 
+#define UNDO_MAX 128
+
 typedef struct {
-    char  buf[MAX_FIELD];
-    int   cursor;
-    int   len;
+    char buf[MAX_FIELD];
+    int  cursor;
+    int  len;
+} EditSnap;
+
+typedef struct {
+    char     buf[MAX_FIELD];
+    int      cursor;
+    int      len;
+    int      sel_anchor;
+    EditSnap undo[UNDO_MAX];
+    int      undo_top;
 } EditBuf;
+
+static volatile sig_atomic_t g_need_redraw = 0;
+
+static void handle_sigcont(int sig)
+{
+    (void)sig;
+    g_need_redraw = 1;
+}
 
 static int vc_field_match(const FLAC__StreamMetadata_VorbisComment_Entry *e,
                           const char *name)
@@ -413,6 +444,11 @@ static int flec_save(FlecState *st)
     if (ok) {
         st->dirty = 0;
         st->cover_path[0] = '\0';
+        memcpy(st->orig_title,      st->title,      MAX_FIELD);
+        memcpy(st->orig_artist,     st->artist,     MAX_FIELD);
+        memcpy(st->orig_album,      st->album,      MAX_FIELD);
+        memcpy(st->orig_date,       st->date,       MAX_FIELD);
+        st->orig_cover_path[0] = '\0';
     }
     return ok;
 }
@@ -444,6 +480,7 @@ static void init_colors(void)
     init_pair(CLR_BORDER, THEME_BORDER_FG,     THEME_BORDER_BG);
     init_pair(CLR_HINT,   THEME_HINT_FG,       THEME_HINT_BG);
     init_pair(CLR_WARN,   THEME_WARN_FG,       THEME_WARN_BG);
+    init_pair(CLR_SELECT, THEME_SELECT_FG,      THEME_SELECT_BG);
 }
 
 static void draw_border(int rows, int cols)
@@ -498,7 +535,7 @@ static void draw_stream_info(int row, int cols, const FlecState *st)
 static void draw_field(int row, int col, int width,
                        const char *label, const char *value,
                        int active, int editing,
-                       int cursor_pos)
+                       int cursor_pos, int sel_anchor)
 {
     int label_w = 10;
 
@@ -530,12 +567,28 @@ static void draw_field(int row, int col, int width,
         mvaddnstr(row, vstart, value + scroll, visible);
 
     if (editing) {
+        attroff(COLOR_PAIR(CLR_ACTIVE));
+
+        if (sel_anchor != -1 && sel_anchor != cursor_pos) {
+            int lo = cursor_pos < sel_anchor ? cursor_pos : sel_anchor;
+            int hi = cursor_pos > sel_anchor ? cursor_pos : sel_anchor;
+            attron(COLOR_PAIR(CLR_SELECT));
+            for (int i = lo; i < hi; i++) {
+                int sx = vstart + (i - scroll);
+                if (sx < vstart || sx >= vstart + vwidth) continue;
+                char c = (i < vlen) ? value[i] : ' ';
+                mvaddch(row, sx, (unsigned char)c);
+            }
+            attroff(COLOR_PAIR(CLR_SELECT));
+        }
+
         int cx = vstart + (cursor_pos - scroll);
         if (cx >= vstart && cx < vstart + vwidth) {
-            char ch = (cursor_pos < vlen) ? value[cursor_pos] : ' ';
-            mvaddch(row, cx, ch | A_UNDERLINE | A_BOLD);
+            char c = (cursor_pos < vlen) ? value[cursor_pos] : ' ';
+            attron(COLOR_PAIR(CLR_ACTIVE) | A_UNDERLINE | A_BOLD);
+            mvaddch(row, cx, (unsigned char)c);
+            attroff(COLOR_PAIR(CLR_ACTIVE) | A_UNDERLINE | A_BOLD);
         }
-        attroff(COLOR_PAIR(CLR_ACTIVE));
     } else if (active) {
         attroff(A_REVERSE);
     } else {
@@ -595,12 +648,85 @@ static void ebuf_init(EditBuf *e, const char *src)
 {
     strncpy(e->buf, src, MAX_FIELD - 1);
     e->buf[MAX_FIELD - 1] = '\0';
-    e->len    = strlen(e->buf);
-    e->cursor = e->len;
+    e->len        = strlen(e->buf);
+    e->cursor     = e->len;
+    e->sel_anchor = -1;
+    e->undo_top   = 0;
+}
+
+static void ebuf_push_undo(EditBuf *e)
+{
+    if (e->undo_top < UNDO_MAX) {
+        memcpy(e->undo[e->undo_top].buf, e->buf, MAX_FIELD);
+        e->undo[e->undo_top].cursor = e->cursor;
+        e->undo[e->undo_top].len    = e->len;
+        e->undo_top++;
+    }
+}
+
+static void ebuf_undo(EditBuf *e)
+{
+    if (e->undo_top == 0) return;
+    e->undo_top--;
+    memcpy(e->buf, e->undo[e->undo_top].buf, MAX_FIELD);
+    e->cursor     = e->undo[e->undo_top].cursor;
+    e->len        = e->undo[e->undo_top].len;
+    e->sel_anchor = -1;
+}
+
+static int  sel_active(const EditBuf *e) { return e->sel_anchor != -1; }
+static int  sel_lo    (const EditBuf *e) { return e->cursor < e->sel_anchor ? e->cursor : e->sel_anchor; }
+static int  sel_hi    (const EditBuf *e) { return e->cursor > e->sel_anchor ? e->cursor : e->sel_anchor; }
+static void sel_clear (EditBuf *e)       { e->sel_anchor = -1; }
+
+static void sel_start(EditBuf *e)
+{
+    if (!sel_active(e)) e->sel_anchor = e->cursor;
+}
+
+static void ebuf_delete_selection_raw(EditBuf *e)
+{
+    if (!sel_active(e)) return;
+    int lo = sel_lo(e), hi = sel_hi(e);
+    memmove(e->buf + lo, e->buf + hi, e->len - hi + 1);
+    e->len   -= (hi - lo);
+    e->cursor = lo;
+    sel_clear(e);
+}
+
+static void ebuf_delete_selection(EditBuf *e)
+{
+    if (!sel_active(e)) return;
+    ebuf_push_undo(e);
+    ebuf_delete_selection_raw(e);
+}
+
+static void ebuf_select_all(EditBuf *e)
+{
+    e->sel_anchor = 0;
+    e->cursor     = e->len;
+}
+
+static int word_skip_left(const EditBuf *e)
+{
+    int p = e->cursor;
+    while (p > 0 && !isalnum((unsigned char)e->buf[p - 1])) p--;
+    while (p > 0 &&  isalnum((unsigned char)e->buf[p - 1])) p--;
+    return p;
+}
+
+static int word_skip_right(const EditBuf *e)
+{
+    int p = e->cursor;
+    while (p < e->len &&  isalnum((unsigned char)e->buf[p])) p++;
+    while (p < e->len && !isalnum((unsigned char)e->buf[p])) p++;
+    return p;
 }
 
 static void ebuf_insert(EditBuf *e, char c)
 {
+    ebuf_push_undo(e);
+    ebuf_delete_selection_raw(e);
     if (e->len >= MAX_FIELD - 1) return;
     memmove(e->buf + e->cursor + 1, e->buf + e->cursor,
             e->len - e->cursor + 1);
@@ -610,7 +736,9 @@ static void ebuf_insert(EditBuf *e, char c)
 
 static void ebuf_delete(EditBuf *e)
 {
+    if (sel_active(e)) { ebuf_delete_selection(e); return; }
     if (e->cursor == 0) return;
+    ebuf_push_undo(e);
     memmove(e->buf + e->cursor - 1, e->buf + e->cursor,
             e->len - e->cursor + 1);
     e->cursor--;
@@ -619,10 +747,49 @@ static void ebuf_delete(EditBuf *e)
 
 static void ebuf_delete_fwd(EditBuf *e)
 {
+    if (sel_active(e)) { ebuf_delete_selection(e); return; }
     if (e->cursor >= e->len) return;
+    ebuf_push_undo(e);
     memmove(e->buf + e->cursor, e->buf + e->cursor + 1,
             e->len - e->cursor);
     e->len--;
+}
+
+static void ebuf_insert_str(EditBuf *e, const char *s, int len)
+{
+    if (len <= 0 && !sel_active(e)) return;
+    ebuf_push_undo(e);
+    ebuf_delete_selection_raw(e);
+    for (int i = 0; i < len; i++) {
+        if (e->len >= MAX_FIELD - 1) break;
+        memmove(e->buf + e->cursor + 1, e->buf + e->cursor,
+                e->len - e->cursor + 1);
+        e->buf[e->cursor++] = s[i];
+        e->len++;
+    }
+}
+
+static void ebuf_paste_clipboard(EditBuf *e)
+{
+    FILE *p = popen(
+        "xclip -o -selection clipboard 2>/dev/null ||"
+        " xsel -bo 2>/dev/null ||"
+        " wl-paste --no-newline 2>/dev/null",
+        "r");
+    if (!p) return;
+
+    char clip[MAX_FIELD];
+    int  clen = 0;
+    int  c;
+    while ((c = fgetc(p)) != EOF && clen < MAX_FIELD - 1) {
+        if (c == '\n' || c == '\r') continue;
+        if (c >= 32 && c < 256)
+            clip[clen++] = (char)c;
+    }
+    clip[clen] = '\0';
+    pclose(p);
+
+    ebuf_insert_str(e, clip, clen);
 }
 
 static const char *field_labels[NUM_FIELDS] = {
@@ -679,11 +846,18 @@ int main(int argc, char **argv)
     memcpy(st.orig_cover_path, st.cover_path, MAX_PATH);
 
     initscr();
-    cbreak();
+    raw();
     noecho();
     keypad(stdscr, TRUE);
     curs_set(0);
     set_escdelay(50);
+
+    define_key("\033[1;5D", MY_KEY_CTRL_LEFT);
+    define_key("\033[1;5C", MY_KEY_CTRL_RIGHT);
+    define_key("\033[1;6D", MY_KEY_CTRL_SHIFT_LEFT);
+    define_key("\033[1;6C", MY_KEY_CTRL_SHIFT_RIGHT);
+
+    signal(SIGCONT, handle_sigcont);
 
     if (has_colors()) init_colors();
 
@@ -698,6 +872,11 @@ int main(int argc, char **argv)
     };
 
     while (running) {
+        if (g_need_redraw) {
+            g_need_redraw = 0;
+            clearok(stdscr, TRUE);
+        }
+
         int rows, cols;
         getmaxyx(stdscr, rows, cols);
         erase();
@@ -719,8 +898,9 @@ int main(int argc, char **argv)
             int edit = (editing && selected == i);
             const char *val = (edit) ? ebuf.buf : fields_ptr[i];
             int cur = (edit) ? ebuf.cursor : 0;
+            int anch = (edit) ? ebuf.sel_anchor : -1;
             draw_field(field_rows[i], fcol, fwidth,
-                       field_labels[i], val, act, edit, cur);
+                       field_labels[i], val, act, edit, cur, anch);
             if (i == FIELD_DATE && act && !edit) {
                 attron(COLOR_PAIR(CLR_HINT));
                 mvprintw(field_rows[i] + 1, fcol,
@@ -735,7 +915,8 @@ int main(int argc, char **argv)
             int edit = (editing && selected == i);
             if (edit) {
                 draw_field(field_rows[i], fcol, fwidth,
-                           field_labels[i], ebuf.buf, act, edit, ebuf.cursor);
+                           field_labels[i], ebuf.buf, act, edit,
+                           ebuf.cursor, ebuf.sel_anchor);
             } else {
                 if (act) {
                     attron(COLOR_PAIR(CLR_HINT) | A_BOLD);
@@ -784,11 +965,26 @@ int main(int argc, char **argv)
             switch (ch) {
             case 27:
                 editing = 0;
+                sel_clear(&ebuf);
                 status_msg[0] = '\0';
                 break;
 
+            case 1:
+                ebuf_select_all(&ebuf);
+                break;
+
+            case 22:
+                ebuf_paste_clipboard(&ebuf);
+                break;
+
+            case 19:
             case '\n':
             case KEY_ENTER:
+                sel_clear(&ebuf);
+                if (strcmp(ebuf.buf, fields_ptr[selected]) == 0) {
+                    editing = 0;
+                    break;
+                }
                 if (selected == FIELD_COVER) {
                     expand_tilde(ebuf.buf, sizeof(ebuf.buf));
                     ebuf.len = strlen(ebuf.buf);
@@ -830,6 +1026,19 @@ int main(int argc, char **argv)
                              "%s field set successfully.", field_labels[selected]);
                     status_err = 0;
                 }
+                if (ch == 19 && !status_err) {
+                    if (flec_save(&st)) {
+                        snprintf(status_msg, sizeof(status_msg), "%s", SYM_SAVE_OK);
+                        status_err = 0;
+                    } else {
+                        snprintf(status_msg, sizeof(status_msg), "%s", SYM_SAVE_ERR);
+                        status_err = 1;
+                    }
+                }
+                break;
+
+            case 26:
+                ebuf_undo(&ebuf);
                 break;
 
             case KEY_BACKSPACE:
@@ -843,29 +1052,89 @@ int main(int argc, char **argv)
                 break;
 
             case KEY_LEFT:
-                if (ebuf.cursor > 0) ebuf.cursor--;
+                if (sel_active(&ebuf)) {
+                    ebuf.cursor = sel_lo(&ebuf);
+                    sel_clear(&ebuf);
+                } else if (ebuf.cursor > 0) {
+                    ebuf.cursor--;
+                }
                 break;
 
             case KEY_RIGHT:
-                if (ebuf.cursor < ebuf.len) ebuf.cursor++;
+                if (sel_active(&ebuf)) {
+                    ebuf.cursor = sel_hi(&ebuf);
+                    sel_clear(&ebuf);
+                } else if (ebuf.cursor < ebuf.len) {
+                    ebuf.cursor++;
+                }
                 break;
 
+            case KEY_SLEFT:
+                if (ebuf.cursor > 0) {
+                    sel_start(&ebuf);
+                    ebuf.cursor--;
+                    if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                }
+                break;
+
+            case KEY_SRIGHT:
+                if (ebuf.cursor < ebuf.len) {
+                    sel_start(&ebuf);
+                    ebuf.cursor++;
+                    if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                }
+                break;
+
+            case MY_KEY_CTRL_LEFT:
+                ebuf.cursor = word_skip_left(&ebuf);
+                sel_clear(&ebuf);
+                break;
+
+            case MY_KEY_CTRL_RIGHT:
+                ebuf.cursor = word_skip_right(&ebuf);
+                sel_clear(&ebuf);
+                break;
+
+            case MY_KEY_CTRL_SHIFT_LEFT: {
+                int dest = word_skip_left(&ebuf);
+                if (dest != ebuf.cursor) {
+                    sel_start(&ebuf);
+                    ebuf.cursor = dest;
+                    if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                }
+                break;
+            }
+
+            case MY_KEY_CTRL_SHIFT_RIGHT: {
+                int dest = word_skip_right(&ebuf);
+                if (dest != ebuf.cursor) {
+                    sel_start(&ebuf);
+                    ebuf.cursor = dest;
+                    if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                }
+                break;
+            }
+
             case KEY_HOME:
-            case 1:
                 ebuf.cursor = 0;
+                sel_clear(&ebuf);
                 break;
 
             case KEY_END:
-            case 5:
                 ebuf.cursor = ebuf.len;
+                sel_clear(&ebuf);
                 break;
 
             case 11:
+                sel_clear(&ebuf);
+                ebuf_push_undo(&ebuf);
                 ebuf.buf[ebuf.cursor] = '\0';
                 ebuf.len = ebuf.cursor;
                 break;
 
             case 21:
+                sel_clear(&ebuf);
+                ebuf_push_undo(&ebuf);
                 memmove(ebuf.buf, ebuf.buf + ebuf.cursor,
                         ebuf.len - ebuf.cursor + 1);
                 ebuf.len    -= ebuf.cursor;
@@ -909,6 +1178,8 @@ int main(int argc, char **argv)
 
         case '\n':
         case KEY_ENTER:
+        case 'a':
+        case 'A':
         case 'e':
         case 'E':
             ebuf_init(&ebuf, fields_ptr[selected]);
@@ -940,6 +1211,14 @@ int main(int argc, char **argv)
                             strcmp(st.cover_path, st.orig_cover_path) != 0);
                 status_msg[0] = '\0';
             }
+            break;
+
+        case 26:
+            def_prog_mode();
+            endwin();
+            raise(SIGTSTP);
+            reset_prog_mode();
+            clearok(stdscr, TRUE);
             break;
 
         case KEY_RESIZE:
