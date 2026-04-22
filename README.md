@@ -23,6 +23,12 @@ Run with no arguments to browse all FLAC files under `$HOME` with fzf:
 $ ./flec
 ```
 
+Show help message:
+
+```console
+$ ./flec -h
+```
+
 Narrow the fzf search to one or more specific directories:
 
 ```console
@@ -55,8 +61,11 @@ $ ./flec -nf "~/Music/Pink Floyd/Time.flac" -c "~/Pictures"
 | `-f`, `--flac` `<dir>...`  | Directories to search for FLAC files (multiple paths allowed) |
 | `-c`, `--cover` `<dir>...` | Directories to search for cover arts (multiple paths allowed) |
 | `-nf`, `--no-fzf` `<path>` | Skip fzf at start and open a specific FLAC file directly      |
+| `-h`, `--help`             | Print help information and exit                               |
 
-In fact, all flags can be combined in any order. If `-f` is omitted, fzf searches `$HOME` by default. The same happens to cover image selection if `-c` is omitted.
+In fact, all flags can be combined in any order.
+
+NOTE: If `-f` is omitted, fzf searches `$HOME` by default. The same happens to cover image selection if `-c` is omitted.
 
 ## Keybinds
 

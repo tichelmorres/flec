@@ -75,51 +75,51 @@
 #define FZF_LAYOUT \
     " --height=100%% --border=sharp --margin=10%%,15%% --layout=reverse"
 
-#define MY_KEY_CTRL_LEFT        (KEY_MAX + 1)
-#define MY_KEY_CTRL_RIGHT       (KEY_MAX + 2)
-#define MY_KEY_CTRL_SHIFT_LEFT  (KEY_MAX + 3)
-#define MY_KEY_CTRL_SHIFT_RIGHT (KEY_MAX + 4)
+#define MY_KEY_CTRL_LEFT         (KEY_MAX + 1)
+#define MY_KEY_CTRL_RIGHT        (KEY_MAX + 2)
+#define MY_KEY_CTRL_SHIFT_LEFT   (KEY_MAX + 3)
+#define MY_KEY_CTRL_SHIFT_RIGHT  (KEY_MAX + 4)
 
-#define CLR_SELECT          10
-#define THEME_SELECT_FG     COLOR_BLACK
-#define THEME_SELECT_BG     COLOR_CYAN
+#define CLR_SELECT       10
+#define THEME_SELECT_FG  COLOR_BLACK
+#define THEME_SELECT_BG  COLOR_CYAN
 
 typedef struct {
-    char  flac_path[MAX_PATH];
-    char  display_path[MAX_PATH];
-    char  title [MAX_FIELD];
-    char  artist[MAX_FIELD];
-    char  album [MAX_FIELD];
-    char  date  [MAX_FIELD];
-    char  cover_path[MAX_PATH];
-    char  orig_title [MAX_FIELD];
-    char  orig_artist[MAX_FIELD];
-    char  orig_album [MAX_FIELD];
-    char  orig_date  [MAX_FIELD];
-    char  orig_cover_path[MAX_PATH];
-    int   has_cover;
+    char flac_path[MAX_PATH];
+    char display_path[MAX_PATH];
+    char title [MAX_FIELD];
+    char artist[MAX_FIELD];
+    char album [MAX_FIELD];
+    char date  [MAX_FIELD];
+    char cover_path[MAX_PATH];
+    char orig_title [MAX_FIELD];
+    char orig_artist[MAX_FIELD];
+    char orig_album [MAX_FIELD];
+    char orig_date  [MAX_FIELD];
+    char orig_cover_path[MAX_PATH];
+    int has_cover;
     unsigned sample_rate;
     unsigned channels;
     unsigned bits;
     uint64_t total_samples;
-    int   dirty;
+    int dirty;
 } FlecState;
 
 #define UNDO_MAX 128
 
 typedef struct {
     char buf[MAX_FIELD];
-    int  cursor;
-    int  len;
+    int cursor;
+    int len;
 } EditSnap;
 
 typedef struct {
-    char     buf[MAX_FIELD];
-    int      cursor;
-    int      len;
-    int      sel_anchor;
+    char buf[MAX_FIELD];
+    int cursor;
+    int len;
+    int sel_anchor;
     EditSnap undo[UNDO_MAX];
-    int      undo_top;
+    int undo_top;
 } EditBuf;
 
 static volatile sig_atomic_t g_need_redraw = 0;
@@ -427,14 +427,14 @@ static const char *validate_image_path(const char *path)
         return "That's a directory, not an image file";
     const char *ext = strrchr(path, '.');
     if (!ext)
-        return "No extension – expected jpg / png / bmp / webp";
+        return "No extension, expected jpg / png / bmp / webp";
     ext++;
     if (strcasecmp(ext, "jpg")  != 0 &&
         strcasecmp(ext, "jpeg") != 0 &&
         strcasecmp(ext, "png")  != 0 &&
         strcasecmp(ext, "bmp")  != 0 &&
         strcasecmp(ext, "webp") != 0)
-        return "Unsupported format – expected jpg / png / bmp / webp";
+        return "Unsupported format, expected jpg / png / bmp / webp";
     return NULL;
 }
 
@@ -814,10 +814,10 @@ static void ebuf_init(EditBuf *e, const char *src)
 {
     strncpy(e->buf, src, MAX_FIELD - 1);
     e->buf[MAX_FIELD - 1] = '\0';
-    e->len        = strlen(e->buf);
-    e->cursor     = e->len;
+    e->len = strlen(e->buf);
+    e->cursor = e->len;
     e->sel_anchor = -1;
-    e->undo_top   = 0;
+    e->undo_top = 0;
 }
 
 static void ebuf_push_undo(EditBuf *e)
@@ -825,7 +825,7 @@ static void ebuf_push_undo(EditBuf *e)
     if (e->undo_top < UNDO_MAX) {
         memcpy(e->undo[e->undo_top].buf, e->buf, MAX_FIELD);
         e->undo[e->undo_top].cursor = e->cursor;
-        e->undo[e->undo_top].len    = e->len;
+        e->undo[e->undo_top].len = e->len;
         e->undo_top++;
     }
 }
@@ -835,8 +835,8 @@ static void ebuf_undo(EditBuf *e)
     if (e->undo_top == 0) return;
     e->undo_top--;
     memcpy(e->buf, e->undo[e->undo_top].buf, MAX_FIELD);
-    e->cursor     = e->undo[e->undo_top].cursor;
-    e->len        = e->undo[e->undo_top].len;
+    e->cursor = e->undo[e->undo_top].cursor;
+    e->len = e->undo[e->undo_top].len;
     e->sel_anchor = -1;
 }
 
@@ -855,7 +855,7 @@ static void ebuf_delete_selection_raw(EditBuf *e)
     if (!sel_active(e)) return;
     int lo = sel_lo(e), hi = sel_hi(e);
     memmove(e->buf + lo, e->buf + hi, e->len - hi + 1);
-    e->len   -= (hi - lo);
+    e->len -= (hi - lo);
     e->cursor = lo;
     sel_clear(e);
 }
@@ -870,7 +870,7 @@ static void ebuf_delete_selection(EditBuf *e)
 static void ebuf_select_all(EditBuf *e)
 {
     e->sel_anchor = 0;
-    e->cursor     = e->len;
+    e->cursor = e->len;
 }
 
 static int word_skip_left(const EditBuf *e)
@@ -962,6 +962,66 @@ static const char *field_labels[NUM_FIELDS] = {
     "Title", "Artist", "Album", "Date", "Cover Art"
 };
 
+#define ANSI_RESET     "\033[0m"
+#define ANSI_BOLD      "\033[1m"
+#define ANSI_UNDERLINE "\033[4m"
+
+#define COL "%-26s"
+
+static void print_help(void)
+{
+    printf(
+        ANSI_BOLD "flec" ANSI_RESET ", "
+        "FLAC metadata editor in C.\n"
+
+        "\n"
+        "Usage: flec [OPTIONS]\n"
+        "\n"
+
+        ANSI_UNDERLINE "Options:" ANSI_RESET "\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "\n"
+
+        ANSI_UNDERLINE "Keybinds:" ANSI_RESET "\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "\n"
+
+        ANSI_UNDERLINE "Dependencies:" ANSI_RESET "\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n"
+        "  " COL "  %s\n",
+
+        // Options
+        "-f, --flac  <dir>...",     "Directories to search for FLAC files.",
+        "-c, --cover <dir>...",    "Directories to search for cover images.",
+        "-nf, --no-fzf <path>",    "Skip fzf and open a specific FLAC file directly.",
+        "-h, --help",              "Show this message.",
+
+        // Keybinds
+        "j / k / arrows",          "Navigate fields.",
+        "Enter / e / a",           "Edit selected field.",
+        "Escape",                  "Cancel current edit.",
+        "Ctrl+S",                  "Save changes to file.",
+        "Ctrl+X",                  "Discard pending cover path.",
+        "r",                       "Search another FLAC file to edit.",
+        "q",                       "Quit (prompts if there are unsaved changes).",
+
+        // Dependencies
+        "libFLAC",                 "Used for FLAC stream metadata editing (read/write).",
+        "ncurses",                 "Used for terminal UI rendering.",
+        "fzf",                     "Nice file picker (optional)."
+    );
+}
+
 int main(int argc, char **argv)
 {
     FlecState st;
@@ -985,6 +1045,11 @@ int main(int argc, char **argv)
                    strcmp(argv[i], "--cover") == 0) {
             mode = MODE_COVER_DIRS;
 
+        } else if (strcmp(argv[i], "-h")     == 0 ||
+                   strcmp(argv[i], "--help") == 0) {
+            print_help();
+            return 0;
+
         } else if (strcmp(argv[i], "-nf")       == 0 ||
                    strcmp(argv[i], "--no-fzf") == 0) {
             i++;
@@ -1005,7 +1070,8 @@ int main(int argc, char **argv)
                 "Usage: flec [OPTIONS]\n"
                 "  -f,  --flac   <dir>...  directories to search for FLAC files\n"
                 "  -c,  --cover  <dir>...  directories to search for cover images\n"
-                "  -nf, --no-fzf <path>    open this FLAC file directly\n");
+                "  -nf, --no-fzf <path>    open this FLAC file directly\n"
+                "  -h,  --help             show help message\n");
             return 1;
 
         } else {
@@ -1092,6 +1158,7 @@ int main(int argc, char **argv)
                 "  -f,  --flac   <dir>...  directories to search for FLAC files\n"
                 "  -c,  --cover  <dir>...  directories to search for cover images\n"
                 "  -nf, --no-fzf <path>    open this FLAC file directly\n"
+                "  -h,  --help             show help message\n"
                 "  (fzf must be installed for interactive picking)\n");
             return 1;
         }
