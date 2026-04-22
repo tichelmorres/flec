@@ -42,7 +42,7 @@ Skip fzf entirely and open a file directly:
 $ ./flec -nf "~/Music/Pink Floyd/Time.flac"
 ```
 
-All flags can be combined and given in any order:
+This can be combined with the other flags too:
 
 ```console
 $ ./flec -nf "~/Music/Pink Floyd/Time.flac" -c "~/Pictures"
@@ -56,7 +56,7 @@ $ ./flec -nf "~/Music/Pink Floyd/Time.flac" -c "~/Pictures"
 | `-c`, `--cover` `<dir>...` | Directories to search for cover arts (multiple paths allowed) |
 | `-nf`, `--no-fzf` `<path>` | Skip fzf at start and open a specific FLAC file directly      |
 
-Flags can be combined in any order. If `-f` is omitted, fzf searches `$HOME` by default. If `-c` is omitted, fzf searches `$HOME` for cover images by default.
+In fact, all flags can be combined in any order. If `-f` is omitted, fzf searches `$HOME` by default. The same happens to cover image selection if `-c` is omitted.
 
 ## Keybinds
 
