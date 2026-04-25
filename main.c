@@ -3,6 +3,8 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <wchar.h>
+#include <locale.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -12,27 +14,27 @@
 #include <ncurses.h>
 #include <FLAC/metadata.h>
 
-#define MAX_FIELD   512
-#define MAX_PATH   1024
-#define NUM_FIELDS    5
-#define MAX_DIRS     32
+#define MAX_FIELD    512
+#define MAX_PATH    1024
+#define NUM_FIELDS     5
+#define MAX_DIRS      32
 #define CMD_BUF    16384
 
-#define FIELD_TITLE   0
-#define FIELD_ARTIST  1
-#define FIELD_ALBUM   2
-#define FIELD_DATE    3
-#define FIELD_COVER   4
+#define FIELD_TITLE    0
+#define FIELD_ARTIST   1
+#define FIELD_ALBUM    2
+#define FIELD_DATE     3
+#define FIELD_COVER    4
 
-#define CLR_HEADER    1
-#define CLR_LABEL     2
-#define CLR_ACTIVE    3
-#define CLR_VALUE     4
-#define CLR_STATUS    5
-#define CLR_ERROR     6
-#define CLR_BORDER    7
-#define CLR_HINT      8
-#define CLR_WARN      9
+#define CLR_HEADER     1
+#define CLR_LABEL      2
+#define CLR_ACTIVE     3
+#define CLR_VALUE      4
+#define CLR_STATUS     5
+#define CLR_ERROR      6
+#define CLR_BORDER     7
+#define CLR_HINT       8
+#define CLR_WARN       9
 
 #define THEME_HEADER_FG      COLOR_CYAN
 #define THEME_HEADER_BG      (-1)
@@ -79,6 +81,7 @@
 #define MY_KEY_CTRL_RIGHT        (KEY_MAX + 2)
 #define MY_KEY_CTRL_SHIFT_LEFT   (KEY_MAX + 3)
 #define MY_KEY_CTRL_SHIFT_RIGHT  (KEY_MAX + 4)
+#define MY_KEY_CTRL_BACKSPACE    (KEY_MAX + 5)
 
 #define CLR_SELECT       10
 #define THEME_SELECT_FG  COLOR_BLACK
@@ -626,6 +629,95 @@ static void init_colors(void)
     init_pair(CLR_SELECT, THEME_SELECT_FG,      THEME_SELECT_BG);
 }
 
+
+static int utf8_seqlen(unsigned char b)
+{
+    if (b < 0x80) return 1;
+    if ((b & 0xE0) == 0xC0) return 2;
+    if ((b & 0xF0) == 0xE0) return 3;
+    if ((b & 0xF8) == 0xF0) return 4;
+    return 1;
+}
+
+static int utf8_prev_cp(const char *buf, int pos)
+{
+    if (pos <= 0) return 0;
+    pos--;
+    while (pos > 0 && ((unsigned char)buf[pos] & 0xC0) == 0x80)
+        pos--;
+    return pos;
+}
+
+static int utf8_next_cp(const char *buf, int len, int pos)
+{
+    if (pos >= len) return len;
+    pos += utf8_seqlen((unsigned char)buf[pos]);
+    if (pos > len) pos = len;
+    return pos;
+}
+
+static int utf8_encode(wchar_t wc, char out[4])
+{
+    uint32_t cp = (uint32_t)wc;
+    if (cp < 0x80) {
+        out[0] = (char)cp; return 1;
+    }
+    if (cp < 0x800) {
+        out[0] = (char)(0xC0 | (cp >> 6));
+        out[1] = (char)(0x80 | (cp & 0x3F));
+        return 2;
+    }
+    if (cp < 0x10000) {
+        out[0] = (char)(0xE0 | (cp >> 12));
+        out[1] = (char)(0x80 | ((cp >> 6) & 0x3F));
+        out[2] = (char)(0x80 | (cp & 0x3F));
+        return 3;
+    }
+    out[0] = (char)(0xF0 | (cp >> 18));
+    out[1] = (char)(0x80 | ((cp >> 12) & 0x3F));
+    out[2] = (char)(0x80 | ((cp >> 6) & 0x3F));
+    out[3] = (char)(0x80 | (cp & 0x3F));
+    return 4;
+}
+
+static int utf8_width_range(const char *buf, int from, int to)
+{
+    int cols = 0, i = from;
+    while (i < to) {
+        int clen = utf8_seqlen((unsigned char)buf[i]);
+        if (i + clen > to) break;
+        char tmp[5] = {0};
+        memcpy(tmp, buf + i, clen);
+        wchar_t wc = 0;
+        mbstowcs(&wc, tmp, 1);
+        int w = wcwidth(wc);
+        cols += (w < 1) ? 1 : w;
+        i += clen;
+    }
+    return cols;
+}
+
+static int utf8_compute_scroll(const char *buf, int cursor_pos, int vwidth)
+{
+    int cursor_col = utf8_width_range(buf, 0, cursor_pos);
+    if (cursor_col < vwidth) return 0;
+    int target = cursor_col - (vwidth - 1);
+    int i = 0, col = 0;
+    while (i < cursor_pos) {
+        int clen = utf8_seqlen((unsigned char)buf[i]);
+        char tmp[5] = {0};
+        memcpy(tmp, buf + i, clen);
+        wchar_t wc = 0;
+        mbstowcs(&wc, tmp, 1);
+        int w = wcwidth(wc);
+        if (w < 1) w = 1;
+        if (col + w > target) break;
+        col += w;
+        i += clen;
+    }
+    return i;
+}
+
 static void draw_border(int rows, int cols)
 {
     attron(COLOR_PAIR(CLR_BORDER));
@@ -688,54 +780,89 @@ static void draw_field(int row, int col, int width,
 
     int vstart = col + label_w;
     int vwidth = width - label_w - 2;
+    int vlen   = (int)strlen(value);
 
-    if (editing) {
-        attron(COLOR_PAIR(CLR_ACTIVE));
-    } else if (active) {
-        attron(A_REVERSE);
-    } else {
-        attron(COLOR_PAIR(CLR_VALUE));
-    }
-
-    int vlen = strlen(value);
-    int scroll = 0;
-    if (editing && cursor_pos > vwidth - 1)
-        scroll = cursor_pos - (vwidth - 1);
+    int scroll = editing ? utf8_compute_scroll(value, cursor_pos, vwidth) : 0;
 
     mvhline(row, vstart, ' ', vwidth);
 
-    int visible = vlen - scroll;
-    if (visible > vwidth) visible = vwidth;
-    if (visible > 0)
-        mvaddnstr(row, vstart, value + scroll, visible);
-
     if (editing) {
-        attroff(COLOR_PAIR(CLR_ACTIVE));
+        int i   = scroll;
+        int dcol = 0;
 
-        if (sel_anchor != -1 && sel_anchor != cursor_pos) {
-            int lo = cursor_pos < sel_anchor ? cursor_pos : sel_anchor;
-            int hi = cursor_pos > sel_anchor ? cursor_pos : sel_anchor;
-            attron(COLOR_PAIR(CLR_SELECT));
-            for (int i = lo; i < hi; i++) {
-                int sx = vstart + (i - scroll);
-                if (sx < vstart || sx >= vstart + vwidth) continue;
-                char c = (i < vlen) ? value[i] : ' ';
-                mvaddch(row, sx, (unsigned char)c);
+        while (dcol < vwidth) {
+            int is_cursor = (i == cursor_pos);
+            int in_sel    = 0;
+
+            if (sel_anchor != -1 && sel_anchor != cursor_pos) {
+                int lo = cursor_pos < sel_anchor ? cursor_pos : sel_anchor;
+                int hi = cursor_pos > sel_anchor ? cursor_pos : sel_anchor;
+                in_sel = (i >= lo && i < hi);
             }
-            attroff(COLOR_PAIR(CLR_SELECT));
+
+            char tmp[5] = {0};
+            int  cw     = 1;
+
+            if (i < vlen) {
+                int clen = utf8_seqlen((unsigned char)value[i]);
+                if (i + clen > vlen) clen = 1;
+                memcpy(tmp, value + i, clen);
+                wchar_t wc = 0;
+                mbstowcs(&wc, tmp, 1);
+                int w = wcwidth(wc);
+                cw = (w < 1) ? 1 : w;
+                if (dcol + cw > vwidth) break;
+            } else {
+                if (!is_cursor) break;
+                tmp[0] = ' ';
+            }
+
+            int sx = vstart + dcol;
+
+            if (is_cursor) {
+                attron(COLOR_PAIR(CLR_ACTIVE) | A_UNDERLINE | A_BOLD);
+                mvaddstr(row, sx, tmp[0] ? tmp : " ");
+                attroff(COLOR_PAIR(CLR_ACTIVE) | A_UNDERLINE | A_BOLD);
+            } else if (in_sel) {
+                attron(COLOR_PAIR(CLR_SELECT));
+                mvaddstr(row, sx, tmp);
+                attroff(COLOR_PAIR(CLR_SELECT));
+            } else {
+                attron(COLOR_PAIR(CLR_ACTIVE));
+                mvaddstr(row, sx, tmp);
+                attroff(COLOR_PAIR(CLR_ACTIVE));
+            }
+
+            if (i >= vlen) break;
+            dcol += cw;
+            i    += utf8_seqlen((unsigned char)value[i]);
+        }
+    } else {
+        if (active)
+            attron(A_REVERSE);
+        else
+            attron(COLOR_PAIR(CLR_VALUE));
+
+        int i = 0, dcol = 0;
+        while (i < vlen && dcol < vwidth) {
+            int clen = utf8_seqlen((unsigned char)value[i]);
+            if (i + clen > vlen) break;
+            char tmp[5] = {0};
+            memcpy(tmp, value + i, clen);
+            wchar_t wc = 0;
+            mbstowcs(&wc, tmp, 1);
+            int w = wcwidth(wc);
+            int cw = (w < 1) ? 1 : w;
+            if (dcol + cw > vwidth) break;
+            mvaddstr(row, vstart + dcol, tmp);
+            dcol += cw;
+            i    += clen;
         }
 
-        int cx = vstart + (cursor_pos - scroll);
-        if (cx >= vstart && cx < vstart + vwidth) {
-            char c = (cursor_pos < vlen) ? value[cursor_pos] : ' ';
-            attron(COLOR_PAIR(CLR_ACTIVE) | A_UNDERLINE | A_BOLD);
-            mvaddch(row, cx, (unsigned char)c);
-            attroff(COLOR_PAIR(CLR_ACTIVE) | A_UNDERLINE | A_BOLD);
-        }
-    } else if (active) {
-        attroff(A_REVERSE);
-    } else {
-        attroff(COLOR_PAIR(CLR_VALUE));
+        if (active)
+            attroff(A_REVERSE);
+        else
+            attroff(COLOR_PAIR(CLR_VALUE));
     }
 
     if (active || editing) {
@@ -876,28 +1003,78 @@ static void ebuf_select_all(EditBuf *e)
 static int word_skip_left(const EditBuf *e)
 {
     int p = e->cursor;
-    while (p > 0 && !isalnum((unsigned char)e->buf[p - 1])) p--;
-    while (p > 0 &&  isalnum((unsigned char)e->buf[p - 1])) p--;
+    while (p > 0) {
+        int prev = utf8_prev_cp(e->buf, p);
+        int clen = p - prev;
+        char tmp[5] = {0};
+        memcpy(tmp, e->buf + prev, clen);
+        wchar_t wc = 0;
+        mbstowcs(&wc, tmp, 1);
+        if (iswalnum((wint_t)wc)) break;
+        p = prev;
+    }
+    while (p > 0) {
+        int prev = utf8_prev_cp(e->buf, p);
+        int clen = p - prev;
+        char tmp[5] = {0};
+        memcpy(tmp, e->buf + prev, clen);
+        wchar_t wc = 0;
+        mbstowcs(&wc, tmp, 1);
+        if (!iswalnum((wint_t)wc)) break;
+        p = prev;
+    }
     return p;
 }
 
 static int word_skip_right(const EditBuf *e)
 {
     int p = e->cursor;
-    while (p < e->len &&  isalnum((unsigned char)e->buf[p])) p++;
-    while (p < e->len && !isalnum((unsigned char)e->buf[p])) p++;
+    while (p < e->len) {
+        int clen = utf8_seqlen((unsigned char)e->buf[p]);
+        char tmp[5] = {0};
+        memcpy(tmp, e->buf + p, clen);
+        wchar_t wc = 0;
+        mbstowcs(&wc, tmp, 1);
+        if (!iswalnum((wint_t)wc)) break;
+        p += clen;
+    }
+    while (p < e->len) {
+        int clen = utf8_seqlen((unsigned char)e->buf[p]);
+        char tmp[5] = {0};
+        memcpy(tmp, e->buf + p, clen);
+        wchar_t wc = 0;
+        mbstowcs(&wc, tmp, 1);
+        if (iswalnum((wint_t)wc)) break;
+        p += clen;
+    }
     return p;
 }
 
-static void ebuf_insert(EditBuf *e, char c)
+static void ebuf_insert_wchar(EditBuf *e, wchar_t wc)
 {
+    char utf8[4];
+    int n = utf8_encode(wc, utf8);
     ebuf_push_undo(e);
     ebuf_delete_selection_raw(e);
-    if (e->len >= MAX_FIELD - 1) return;
-    memmove(e->buf + e->cursor + 1, e->buf + e->cursor,
+    if (e->len + n >= MAX_FIELD) return;
+    memmove(e->buf + e->cursor + n, e->buf + e->cursor,
             e->len - e->cursor + 1);
-    e->buf[e->cursor++] = c;
-    e->len++;
+    memcpy(e->buf + e->cursor, utf8, n);
+    e->cursor += n;
+    e->len    += n;
+}
+
+static void ebuf_delete_word_left(EditBuf *e)
+{
+    if (sel_active(e)) { ebuf_delete_selection(e); return; }
+    int dest = word_skip_left(e);
+    if (dest == e->cursor) return;
+    ebuf_push_undo(e);
+    int nbytes = e->cursor - dest;
+    memmove(e->buf + dest, e->buf + e->cursor,
+            e->len - e->cursor + 1);
+    e->len    -= nbytes;
+    e->cursor  = dest;
 }
 
 static void ebuf_delete(EditBuf *e)
@@ -905,10 +1082,12 @@ static void ebuf_delete(EditBuf *e)
     if (sel_active(e)) { ebuf_delete_selection(e); return; }
     if (e->cursor == 0) return;
     ebuf_push_undo(e);
-    memmove(e->buf + e->cursor - 1, e->buf + e->cursor,
+    int new_cursor = utf8_prev_cp(e->buf, e->cursor);
+    int nbytes = e->cursor - new_cursor;
+    memmove(e->buf + new_cursor, e->buf + e->cursor,
             e->len - e->cursor + 1);
-    e->cursor--;
-    e->len--;
+    e->cursor  = new_cursor;
+    e->len    -= nbytes;
 }
 
 static void ebuf_delete_fwd(EditBuf *e)
@@ -916,9 +1095,11 @@ static void ebuf_delete_fwd(EditBuf *e)
     if (sel_active(e)) { ebuf_delete_selection(e); return; }
     if (e->cursor >= e->len) return;
     ebuf_push_undo(e);
-    memmove(e->buf + e->cursor, e->buf + e->cursor + 1,
-            e->len - e->cursor);
-    e->len--;
+    int nbytes = utf8_seqlen((unsigned char)e->buf[e->cursor]);
+    if (e->cursor + nbytes > e->len) nbytes = e->len - e->cursor;
+    memmove(e->buf + e->cursor, e->buf + e->cursor + nbytes,
+            e->len - e->cursor - nbytes + 1);
+    e->len -= nbytes;
 }
 
 static void ebuf_insert_str(EditBuf *e, const char *s, int len)
@@ -949,8 +1130,7 @@ static void ebuf_paste_clipboard(EditBuf *e)
     int  c;
     while ((c = fgetc(p)) != EOF && clen < MAX_FIELD - 1) {
         if (c == '\n' || c == '\r') continue;
-        if (c >= 32 && c < 256)
-            clip[clen++] = (char)c;
+        clip[clen++] = (char)c;
     }
     clip[clen] = '\0';
     pclose(p);
@@ -1000,13 +1180,11 @@ static void print_help(void)
         "  " COL "  %s\n"
         "  " COL "  %s\n",
 
-        // Options
         "-f, --flac  <dir>...",     "Directories to search for FLAC files.",
         "-c, --cover <dir>...",    "Directories to search for cover images.",
         "-nf, --no-fzf <path>",    "Skip fzf and open a specific FLAC file directly.",
         "-h, --help",              "Show this message.",
 
-        // Keybinds
         "j / k / arrows",          "Navigate fields.",
         "Enter / e / a",           "Edit selected field.",
         "Escape",                  "Cancel current edit.",
@@ -1015,7 +1193,6 @@ static void print_help(void)
         "r",                       "Search another FLAC file to edit.",
         "q",                       "Quit (prompts if there are unsaved changes).",
 
-        // Dependencies
         "libFLAC",                 "Used for FLAC stream metadata editing (read/write).",
         "ncurses",                 "Used for terminal UI rendering.",
         "fzf",                     "Nice file picker (optional)."
@@ -1179,6 +1356,7 @@ int main(int argc, char **argv)
     memcpy(st.orig_date,       st.date,       MAX_FIELD);
     memcpy(st.orig_cover_path, st.cover_path, MAX_PATH);
 
+    setlocale(LC_ALL, "");
     initscr();
     raw();
     noecho();
@@ -1190,6 +1368,8 @@ int main(int argc, char **argv)
     define_key("\033[1;5C", MY_KEY_CTRL_RIGHT);
     define_key("\033[1;6D", MY_KEY_CTRL_SHIFT_LEFT);
     define_key("\033[1;6C", MY_KEY_CTRL_SHIFT_RIGHT);
+    define_key("\033[27;5;8~", MY_KEY_CTRL_BACKSPACE);
+    define_key("\033[127;5u",  MY_KEY_CTRL_BACKSPACE);
 
     signal(SIGCONT, handle_sigcont);
 
@@ -1290,9 +1470,9 @@ int main(int argc, char **argv)
             int r = field_rows[selected];
             int vstart = fcol + 10;
             int vwidth = fwidth - 10 - 2;
-            int scroll = (ebuf.cursor > vwidth - 1)
-                         ? ebuf.cursor - (vwidth - 1) : 0;
-            int cx = vstart + (ebuf.cursor - scroll);
+            int scroll  = utf8_compute_scroll(ebuf.buf, ebuf.cursor, vwidth);
+            int cur_col = utf8_width_range(ebuf.buf, scroll, ebuf.cursor);
+            int cx = vstart + cur_col;
             move(r, cx);
         } else {
             curs_set(0);
@@ -1300,10 +1480,11 @@ int main(int argc, char **argv)
 
         refresh();
 
-        int ch = getch();
+        wint_t wch;
+        int chtype = get_wch(&wch);
 
         if (editing) {
-            switch (ch) {
+            switch (wch) {
             case 27:
                 editing = 0;
                 sel_clear(&ebuf);
@@ -1367,7 +1548,7 @@ int main(int argc, char **argv)
                              "%s field set successfully.", field_labels[selected]);
                     status_err = 0;
                 }
-                if (ch == 19 && !status_err) {
+                if (wch == 19 && !status_err) {
                     if (!st.dirty) {
                         snprintf(status_msg, sizeof(status_msg), "No changes to be saved.");
                         status_err = 2;
@@ -1387,8 +1568,12 @@ int main(int argc, char **argv)
 
             case KEY_BACKSPACE:
             case 127:
-            case '\b':
                 ebuf_delete(&ebuf);
+                break;
+
+            case 8:
+            case MY_KEY_CTRL_BACKSPACE:
+                ebuf_delete_word_left(&ebuf);
                 break;
 
             case KEY_DC:
@@ -1486,22 +1671,22 @@ int main(int argc, char **argv)
                 break;
 
             default:
-                if (ch >= 32 && ch < 256)
-                    ebuf_insert(&ebuf, (char)ch);
+                if (chtype == OK && (wchar_t)wch >= 32)
+                    ebuf_insert_wchar(&ebuf, (wchar_t)wch);
                 break;
             }
             continue;
         }
 
-        switch (ch) {
+        switch (wch) {
         case 'q':
         case 'Q':
             if (st.dirty) {
                 draw_warn(rows, cols,
                     "Unsaved changes! Press Q again to quit, any key to cancel.");
                 refresh();
-                int c2 = getch();
-                if (c2 == 'q' || c2 == 'Q') running = 0;
+                { wint_t c2; get_wch(&c2);
+                if (c2 == 'q' || c2 == 'Q') running = 0; }
             } else {
                 running = 0;
             }
@@ -1593,8 +1778,8 @@ int main(int argc, char **argv)
                 draw_warn(rows, cols,
                     "Unsaved changes! Press R again to discard, any key to cancel.");
                 refresh();
-                int rc2 = getch();
-                if (rc2 != 'r' && rc2 != 'R') break;
+                { wint_t rc2; get_wch(&rc2);
+                if (rc2 != 'r' && rc2 != 'R') break; }
             }
             {
                 char new_path[MAX_PATH] = "";
