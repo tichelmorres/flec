@@ -16,6 +16,7 @@
           version = "1.0.0";
           src     = ./.;
 
+          nativeBuildInputs = with pkgs; [ pkg-config ];
           buildInputs = with pkgs; [ flac ncurses ];
           buildPhase  = ''
             cc -o nob nob.c

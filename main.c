@@ -4,7 +4,6 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <wchar.h>
-#include <wctype.h>
 #include <locale.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -649,13 +648,6 @@ static int utf8_prev_cp(const char *buf, int pos)
     return pos;
 }
 
-// static int utf8_next_cp(const char *buf, int len, int pos)
-// {
-//     if (pos >= len) return len;
-//     pos += utf8_seqlen((unsigned char)buf[pos]);
-//     if (pos > len) pos = len;
-//     return pos;
-// }
 
 static int utf8_encode(wchar_t wc, char out[4])
 {
