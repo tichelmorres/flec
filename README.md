@@ -54,7 +54,7 @@ This can be combined with other flags:
 $ ./flec -o "~/Music/Pink Floyd/Time.flac" -c "~/Pictures"
 ```
 
-Disable fzf entirely (NO-FZF mode) with `-nf`. This makes typing paths manually mandatory at every prompt:
+Disable fzf entirely (enter NO-FZF mode) with `-nf`. This makes typing paths manually mandatory at every prompt:
 
 ```console
 $ ./flec -nf
@@ -86,7 +86,7 @@ flec has two operating modes that affect how file and image paths are resolved.
 
 The standard FZF mode requires [fzf](https://github.com/junegunn/fzf) to be installed and uses it as an interactive fuzzy picker in startup for searching for `.flac` files, the `R` keybind (reselecting the `.flac` file), and the Cover Art field, which opens fzf to browse for image files.
 
-The alternative NO-FZF mode (enabled by `-nf` / `--no-fzf`) removes all fzf dependency and replaces every picker with direct path input, except for the `R` keybind functionality, which is not yet supported without fzf.
+The alternative NO-FZF mode (enabled by `-nf` / `--no-fzf`) removes all fzf dependency and replaces every picker with direct path input.
 
 ## Keybinds
 

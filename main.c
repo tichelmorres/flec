@@ -2004,13 +2004,6 @@ int main(int argc, char **argv)
 
         case 'r':
         case 'R':
-            if (!use_fzf) {
-                draw_warn(rows, cols,
-                "The R keybind is not supported in NO-FZF mode.");
-                refresh();
-                { wint_t rc2; get_wch(&rc2); (void)rc2; }
-                break;
-            }
             if (st.dirty) {
                 draw_warn(rows, cols,
                 "Unsaved changes! Press R again to discard, any key to cancel.");
@@ -2020,8 +2013,13 @@ int main(int argc, char **argv)
             }
             {
                 char new_path[MAX_PATH] = "";
-                int picked = run_fzf_tty(new_path, MAX_PATH,
-                flac_dirs, flac_dirs_count);
+                int picked;
+                if (use_fzf) {
+                    picked = run_fzf_tty(new_path, MAX_PATH,
+                    flac_dirs, flac_dirs_count);
+                } else {
+                    picked = prompt_path_ncurses(new_path, MAX_PATH);
+                }
                 clearok(stdscr, TRUE);
                 if (picked && new_path[0] != '\0') {
                     memset(&st, 0, sizeof(st));
