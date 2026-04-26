@@ -42,16 +42,28 @@ Also specify where fzf should look for cover images:
 $ ./flec -f "~/Music" -c "~/Pictures" "/home/user/CoverArts"
 ```
 
-Skip fzf entirely and open a file directly:
+Open a file directly, skipping fzf file selection:
 
 ```console
-$ ./flec -nf "~/Music/Pink Floyd/Time.flac"
+$ ./flec -o "~/Music/Pink Floyd/Time.flac"
 ```
 
-This can be combined with the other flags too:
+This can be combined with other flags:
 
 ```console
-$ ./flec -nf "~/Music/Pink Floyd/Time.flac" -c "~/Pictures"
+$ ./flec -o "~/Music/Pink Floyd/Time.flac" -c "~/Pictures"
+```
+
+Disable fzf entirely (NO-FZF mode) with `-nf`. This makes typing paths manually mandatory at every prompt:
+
+```console
+$ ./flec -nf
+```
+
+NO-FZF mode can also be combined with `-o` to skip the initial path prompt:
+
+```console
+$ ./flec -nf -o "~/Music/Pink Floyd/Time.flac"
 ```
 
 ## Flags
@@ -60,12 +72,21 @@ $ ./flec -nf "~/Music/Pink Floyd/Time.flac" -c "~/Pictures"
 |----------------------------|---------------------------------------------------------------|
 | `-f`, `--flac` `<dir>...`  | Directories to search for FLAC files (multiple paths allowed) |
 | `-c`, `--cover` `<dir>...` | Directories to search for cover arts (multiple paths allowed) |
-| `-nf`, `--no-fzf` `<path>` | Skip fzf at start and open a specific FLAC file directly      |
+| `-o`, `--open` `<path>`    | Open a specific FLAC file directly (works in any mode)        |
+| `-nf`, `--no-fzf`          | Disable fzf; use manual path input instead (NO-FZF mode)      |
 | `-h`, `--help`             | Print help information and exit                               |
 
 In fact, all flags can be combined in any order.
 
-NOTE: If `-f` is omitted, fzf searches `$HOME` by default. The same happens to cover image selection if `-c` is omitted.
+NOTE: If `-f` is omitted, fzf searches `$HOME` by default. The same applies to cover image selection if `-c` is omitted — but only in FZF mode.
+
+## FZF mode vs NO-FZF mode
+
+flec has two operating modes that affect how file and image paths are resolved.
+
+The standard FZF mode requires [fzf](https://github.com/junegunn/fzf) to be installed and uses it as an interactive fuzzy picker in startup for searching for `.flac` files, the `R` keybind (reselecting the `.flac` file), and the Cover Art field, which opens fzf to browse for image files.
+
+The alternative NO-FZF mode (enabled by `-nf` / `--no-fzf`) removes all fzf dependency and replaces every picker with direct path input, except for the `R` keybind functionality, which is not yet supported without fzf.
 
 ## Keybinds
 

@@ -69,13 +69,13 @@
 #define SYM_SAVE_ERR      "[!!] Save failed! Check permissions / file."
 
 #define FZF_COLORS \
-    "--color='bg:#181818,bg+:#285577,fg:#f5f4f9,fg+:#ffffff," \
-    "hl:#77c686,hl+:#77c686,info:#fdf3b6,marker:#f43841," \
-    "pointer:#57afc0,prompt:#9e95c7,spinner:#57afc0," \
-    "border:#453d41,header:#57afc0'"
+"--color='bg:#181818,bg+:#285577,fg:#f5f4f9,fg+:#ffffff," \
+"hl:#77c686,hl+:#77c686,info:#fdf3b6,marker:#f43841," \
+"pointer:#57afc0,prompt:#9e95c7,spinner:#57afc0," \
+"border:#453d41,header:#57afc0'"
 
 #define FZF_LAYOUT \
-    " --height=100%% --border=sharp --margin=10%%,15%% --layout=reverse"
+" --height=100%% --border=sharp --margin=10%%,15%% --layout=reverse"
 
 #define MY_KEY_CTRL_LEFT         (KEY_MAX + 1)
 #define MY_KEY_CTRL_RIGHT        (KEY_MAX + 2)
@@ -134,7 +134,7 @@ static void handle_sigcont(int sig)
 }
 
 static int vc_field_match(const FLAC__StreamMetadata_VorbisComment_Entry *e,
-                          const char *name)
+const char *name)
 {
     size_t nlen = strlen(name);
     if (e->length <= nlen) return 0;
@@ -143,7 +143,7 @@ static int vc_field_match(const FLAC__StreamMetadata_VorbisComment_Entry *e,
 }
 
 static void vc_get_value(const FLAC__StreamMetadata_VorbisComment_Entry *e,
-                         const char *name, char *dst, size_t dstsz)
+const char *name, char *dst, size_t dstsz)
 {
     size_t nlen = strlen(name) + 1;
     size_t vlen = e->length - nlen;
@@ -171,33 +171,33 @@ static int read_image_file(const char *path, uint8_t **data, uint32_t *size)
 static const char *detect_mime(const uint8_t *data, uint32_t size)
 {
     if (size >= 8 &&
-        data[0]==0x89 && data[1]=='P' && data[2]=='N' && data[3]=='G')
-        return "image/png";
+    data[0]==0x89 && data[1]=='P' && data[2]=='N' && data[3]=='G')
+    return "image/png";
     if (size >= 3 &&
-        data[0]==0xFF && data[1]==0xD8 && data[2]==0xFF)
-        return "image/jpeg";
+    data[0]==0xFF && data[1]==0xD8 && data[2]==0xFF)
+    return "image/jpeg";
     if (size >= 4 &&
-        data[0]=='G' && data[1]=='I' && data[2]=='F')
-        return "image/gif";
+    data[0]=='G' && data[1]=='I' && data[2]=='F')
+    return "image/gif";
     if (size >= 2 &&
-        data[0]=='B' && data[1]=='M')
-        return "image/bmp";
+    data[0]=='B' && data[1]=='M')
+    return "image/bmp";
     return "application/octet-stream";
 }
 
 static void png_dimensions(const uint8_t *d, uint32_t sz,
-                             uint32_t *w, uint32_t *h)
+uint32_t *w, uint32_t *h)
 {
     *w = *h = 0;
     if (sz < 24) return;
     *w = ((uint32_t)d[16]<<24)|((uint32_t)d[17]<<16)|
-         ((uint32_t)d[18]<<8)|d[19];
+    ((uint32_t)d[18]<<8)|d[19];
     *h = ((uint32_t)d[20]<<24)|((uint32_t)d[21]<<16)|
-         ((uint32_t)d[22]<<8)|d[23];
+    ((uint32_t)d[22]<<8)|d[23];
 }
 
 static void jpeg_dimensions(const uint8_t *d, uint32_t sz,
-                              uint32_t *w, uint32_t *h)
+uint32_t *w, uint32_t *h)
 {
     *w = *h = 0;
     uint32_t i = 2;
@@ -206,7 +206,7 @@ static void jpeg_dimensions(const uint8_t *d, uint32_t sz,
         uint8_t marker = d[i+1];
         uint16_t seg_len = ((uint16_t)d[i+2]<<8)|d[i+3];
         if ((marker & 0xF0) == 0xC0 && marker != 0xC4 &&
-            marker != 0xC8 && marker != 0xCC) {
+        marker != 0xC8 && marker != 0xCC) {
             if (i + 8 < sz) {
                 *h = ((uint32_t)d[i+5]<<8)|d[i+6];
                 *w = ((uint32_t)d[i+7]<<8)|d[i+8];
@@ -221,7 +221,7 @@ static int fzf_finish(char *buf, char *out, size_t outsz)
 {
     size_t len = strlen(buf);
     while (len > 0 && (buf[len - 1] == '\n' || buf[len - 1] == '\r'))
-        buf[--len] = '\0';
+    buf[--len] = '\0';
     if (len == 0) return 0;
     snprintf(out, outsz, "%s", buf);
     return 1;
@@ -237,7 +237,7 @@ static int fzf_available(void)
 static void expand_tilde(char *path, size_t sz);
 
 static int run_fzf_cover_tty(char *out, size_t outsz,
-                              char (*dirs)[MAX_PATH], int ndirs)
+char (*dirs)[MAX_PATH], int ndirs)
 {
     const char *home = getenv("HOME");
     if (!home || home[0] == '\0') home = "";
@@ -264,7 +264,7 @@ static int run_fzf_cover_tty(char *out, size_t outsz,
             expand_tilde(exp, MAX_PATH);
             size_t cur = strlen(find_args);
             snprintf(find_args + cur, sizeof(find_args) - cur,
-                     "\"%s\" ", exp);
+            "\"%s\" ", exp);
         }
         if (ndirs == 1) {
             strncpy(prompt_dir, dirs[0], sizeof(prompt_dir) - 1);
@@ -277,14 +277,14 @@ static int run_fzf_cover_tty(char *out, size_t outsz,
 
     char cmd[CMD_BUF];
     snprintf(cmd, sizeof(cmd),
-        "find %s -maxdepth 8 "
-        "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png'"
-        "   -o -iname '*.bmp'  -o -iname '*.webp' \\)"
-        " 2>/dev/null"
-        " | sort -u"
-        " | fzf " FZF_COLORS " --prompt='%s'"
-        FZF_LAYOUT,
-        find_args, prompt);
+    "find %s -maxdepth 8 "
+    "\\( -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png'"
+    "   -o -iname '*.bmp'  -o -iname '*.webp' \\)"
+    " 2>/dev/null"
+    " | sort -u"
+    " | fzf " FZF_COLORS " --prompt='%s'"
+    FZF_LAYOUT,
+    find_args, prompt);
 
     fflush(stdout);
     ssize_t bytes_written = write(STDOUT_FILENO, "\033[2J\033[H", 7);
@@ -316,7 +316,7 @@ static int run_fzf_cover_tty(char *out, size_t outsz,
             got = (fgets(buf, sizeof(buf), f) != NULL);
             fclose(f);
             if (got)
-                got = fzf_finish(buf, out, outsz);
+            got = fzf_finish(buf, out, outsz);
         }
     }
 
@@ -325,7 +325,7 @@ static int run_fzf_cover_tty(char *out, size_t outsz,
 }
 
 static int run_fzf_tty(char *out, size_t outsz,
-                        char (*dirs)[MAX_PATH], int ndirs)
+char (*dirs)[MAX_PATH], int ndirs)
 {
     const char *home = getenv("HOME");
     if (!home || home[0] == '\0') home = "";
@@ -352,7 +352,7 @@ static int run_fzf_tty(char *out, size_t outsz,
             expand_tilde(exp, MAX_PATH);
             size_t cur = strlen(find_args);
             snprintf(find_args + cur, sizeof(find_args) - cur,
-                     "\"%s\" ", exp);
+            "\"%s\" ", exp);
         }
         if (ndirs == 1) {
             strncpy(prompt_dir, dirs[0], sizeof(prompt_dir) - 1);
@@ -365,11 +365,11 @@ static int run_fzf_tty(char *out, size_t outsz,
 
     char cmd[CMD_BUF];
     snprintf(cmd, sizeof(cmd),
-        "find %s -maxdepth 8 -iname '*.flac' 2>/dev/null"
-        " | sort -u"
-        " | fzf " FZF_COLORS " --prompt='%s'"
-        FZF_LAYOUT,
-        find_args, prompt);
+    "find %s -maxdepth 8 -iname '*.flac' 2>/dev/null"
+    " | sort -u"
+    " | fzf " FZF_COLORS " --prompt='%s'"
+    FZF_LAYOUT,
+    find_args, prompt);
 
     fflush(stdout);
     ssize_t bytes_written = write(STDOUT_FILENO, "\033[2J\033[H", 7);
@@ -401,7 +401,7 @@ static int run_fzf_tty(char *out, size_t outsz,
             got = (fgets(buf, sizeof(buf), f) != NULL);
             fclose(f);
             if (got)
-                got = fzf_finish(buf, out, outsz);
+            got = fzf_finish(buf, out, outsz);
         }
     }
 
@@ -425,19 +425,19 @@ static const char *validate_image_path(const char *path)
 {
     struct stat st;
     if (stat(path, &st) != 0)
-        return "File not found";
+    return "File not found";
     if (S_ISDIR(st.st_mode))
-        return "That's a directory, not an image file";
+    return "That's a directory, not an image file";
     const char *ext = strrchr(path, '.');
     if (!ext)
-        return "No extension, expected jpg / png / bmp / webp";
+    return "No extension, expected jpg / png / bmp / webp";
     ext++;
     if (strcasecmp(ext, "jpg")  != 0 &&
-        strcasecmp(ext, "jpeg") != 0 &&
-        strcasecmp(ext, "png")  != 0 &&
-        strcasecmp(ext, "bmp")  != 0 &&
-        strcasecmp(ext, "webp") != 0)
-        return "Unsupported format, expected jpg / png / bmp / webp";
+    strcasecmp(ext, "jpeg") != 0 &&
+    strcasecmp(ext, "png")  != 0 &&
+    strcasecmp(ext, "bmp")  != 0 &&
+    strcasecmp(ext, "webp") != 0)
+    return "Unsupported format, expected jpg / png / bmp / webp";
     return NULL;
 }
 
@@ -470,20 +470,20 @@ static int flec_load(FlecState *st)
         if (blk->type == FLAC__METADATA_TYPE_VORBIS_COMMENT) {
             for (uint32_t i = 0; i < blk->data.vorbis_comment.num_comments; i++) {
                 FLAC__StreamMetadata_VorbisComment_Entry *e =
-                    &blk->data.vorbis_comment.comments[i];
+                &blk->data.vorbis_comment.comments[i];
                 if (vc_field_match(e, "TITLE"))
-                    vc_get_value(e, "TITLE", st->title, MAX_FIELD);
+                vc_get_value(e, "TITLE", st->title, MAX_FIELD);
                 else if (vc_field_match(e, "ARTIST"))
-                    vc_get_value(e, "ARTIST", st->artist, MAX_FIELD);
+                vc_get_value(e, "ARTIST", st->artist, MAX_FIELD);
                 else if (vc_field_match(e, "ALBUM"))
-                    vc_get_value(e, "ALBUM", st->album, MAX_FIELD);
+                vc_get_value(e, "ALBUM", st->album, MAX_FIELD);
                 else if (vc_field_match(e, "DATE"))
-                    vc_get_value(e, "DATE", st->date, MAX_FIELD);
+                vc_get_value(e, "DATE", st->date, MAX_FIELD);
             }
         }
 
         if (blk->type == FLAC__METADATA_TYPE_PICTURE)
-            st->has_cover = 1;
+        st->has_cover = 1;
 
     } while (FLAC__metadata_iterator_next(it));
 
@@ -514,7 +514,7 @@ static int flec_save(FlecState *st)
             vc_block = blk;
         }
         if (blk->type == FLAC__METADATA_TYPE_PICTURE &&
-            st->cover_path[0] != '\0') {
+        st->cover_path[0] != '\0') {
             FLAC__metadata_iterator_delete_block(it, true);
         }
     } while (FLAC__metadata_iterator_next(it));
@@ -534,11 +534,11 @@ static int flec_save(FlecState *st)
     for (int i = 0; i < 4; i++) {
         FLAC__StreamMetadata_VorbisComment_Entry entry;
         if (FLAC__metadata_object_vorbiscomment_entry_from_name_value_pair(
-                &entry, tags[i].name, tags[i].val)) {
+        &entry, tags[i].name, tags[i].val)) {
             if (!FLAC__metadata_object_vorbiscomment_replace_comment(
-                    vc_block, entry, 0, false)) {
+            vc_block, entry, 0, false)) {
                 FLAC__metadata_object_vorbiscomment_append_comment(
-                    vc_block, entry, false);
+                vc_block, entry, false);
             }
         }
     }
@@ -552,18 +552,18 @@ static int flec_save(FlecState *st)
             uint32_t w = 0, h = 0;
 
             if (strcmp(mime, "image/png") == 0)
-                png_dimensions(img_data, img_size, &w, &h);
+            png_dimensions(img_data, img_size, &w, &h);
             else if (strcmp(mime, "image/jpeg") == 0)
-                jpeg_dimensions(img_data, img_size, &w, &h);
+            jpeg_dimensions(img_data, img_size, &w, &h);
 
             FLAC__StreamMetadata *pic =
-                FLAC__metadata_object_new(FLAC__METADATA_TYPE_PICTURE);
+            FLAC__metadata_object_new(FLAC__METADATA_TYPE_PICTURE);
 
             FLAC__metadata_object_picture_set_mime_type(pic, (char*)mime, true);
             FLAC__metadata_object_picture_set_description(
-                pic, (FLAC__byte*)"", true);
+            pic, (FLAC__byte*)"", true);
             FLAC__metadata_object_picture_set_data(
-                pic, img_data, img_size, true);
+            pic, img_data, img_size, true);
             pic->data.picture.type   = FLAC__STREAM_METADATA_PICTURE_TYPE_FRONT_COVER;
             pic->data.picture.width  = w;
             pic->data.picture.height = h;
@@ -605,7 +605,7 @@ static void make_display_path(const char *full, char *display, size_t dsz)
     if (home && home[0] != '\0') {
         size_t hlen = strlen(home);
         if (strncmp(full, home, hlen) == 0 &&
-            (full[hlen] == '/' || full[hlen] == '\0')) {
+        (full[hlen] == '/' || full[hlen] == '\0')) {
             snprintf(display, dsz, "~%s", full + hlen);
             return;
         }
@@ -644,7 +644,7 @@ static int utf8_prev_cp(const char *buf, int pos)
     if (pos <= 0) return 0;
     pos--;
     while (pos > 0 && ((unsigned char)buf[pos] & 0xC0) == 0x80)
-        pos--;
+    pos--;
     return pos;
 }
 
@@ -748,12 +748,12 @@ static void draw_stream_info(int row, int cols, const FlecState *st)
 {
     attron(COLOR_PAIR(CLR_HINT));
     double secs = st->sample_rate > 0
-        ? (double)st->total_samples / st->sample_rate : 0;
+    ? (double)st->total_samples / st->sample_rate : 0;
     int m = (int)secs / 60, s = (int)secs % 60;
     char buf[64];
     snprintf(buf, sizeof(buf),
-             "[ %u Hz  %uch  %ubit  %d:%02d ]",
-             st->sample_rate, st->channels, st->bits, m, s);
+    "[ %u Hz  %uch  %ubit  %d:%02d ]",
+    st->sample_rate, st->channels, st->bits, m, s);
     int col = (cols - (int)strlen(buf)) / 2;
     if (col < 1) col = 1;
     mvprintw(row, col, "%s", buf);
@@ -761,9 +761,9 @@ static void draw_stream_info(int row, int cols, const FlecState *st)
 }
 
 static void draw_field(int row, int col, int width,
-                       const char *label, const char *value,
-                       int active, int editing,
-                       int cursor_pos, int sel_anchor)
+const char *label, const char *value,
+int active, int editing,
+int cursor_pos, int sel_anchor)
 {
     int label_w = 10;
 
@@ -777,10 +777,12 @@ static void draw_field(int row, int col, int width,
 
     int scroll = editing ? utf8_compute_scroll(value, cursor_pos, vwidth) : 0;
 
-    mvhline(row, vstart, ' ', vwidth);
-
     if (editing) {
-        int i   = scroll;
+        attron(COLOR_PAIR(CLR_ACTIVE));
+        mvhline(row, vstart, ' ', vwidth);
+        attroff(COLOR_PAIR(CLR_ACTIVE));
+
+        int i    = scroll;
         int dcol = 0;
 
         while (dcol < vwidth) {
@@ -831,10 +833,13 @@ static void draw_field(int row, int col, int width,
             i    += utf8_seqlen((unsigned char)value[i]);
         }
     } else {
-        if (active)
+        if (active) {
             attron(A_REVERSE);
-        else
+            mvhline(row, vstart, ' ', vwidth);
+        } else {
             attron(COLOR_PAIR(CLR_VALUE));
+            mvhline(row, vstart, ' ', vwidth);
+        }
 
         int i = 0, dcol = 0;
         while (i < vlen && dcol < vwidth) {
@@ -853,9 +858,9 @@ static void draw_field(int row, int col, int width,
         }
 
         if (active)
-            attroff(A_REVERSE);
+        attroff(A_REVERSE);
         else
-            attroff(COLOR_PAIR(CLR_VALUE));
+        attroff(COLOR_PAIR(CLR_VALUE));
     }
 
     if (active || editing) {
@@ -868,8 +873,8 @@ static void draw_field(int row, int col, int width,
 static void draw_status(int rows, int cols, const char *msg, int status_type)
 {
     int pair = (status_type == 1) ? CLR_ERROR
-             : (status_type == 2) ? CLR_WARN
-             : CLR_STATUS;
+    : (status_type == 2) ? CLR_WARN
+    : CLR_STATUS;
     attron(COLOR_PAIR(pair) | A_BOLD);
     int avail = cols - 2;
     int len = (int)strlen(msg);
@@ -915,7 +920,7 @@ static void draw_cover_indicator(int row, int col, int cols, const FlecState *st
             int plen = (int)strlen(st->cover_path);
             if (plen > path_avail) {
                 mvprintw(row, vstart, "New: ...%s",
-                         st->cover_path + plen - (path_avail - 3));
+                st->cover_path + plen - (path_avail - 3));
             } else {
                 mvprintw(row, vstart, "New: %-*s", path_avail, st->cover_path);
             }
@@ -923,7 +928,7 @@ static void draw_cover_indicator(int row, int col, int cols, const FlecState *st
         attroff(COLOR_PAIR(CLR_ACTIVE));
     } else {
         const char *label = st->has_cover ? "[Embedded cover present]"
-                                          : "[No cover art]";
+        : "[No cover art]";
         attron(st->has_cover ? COLOR_PAIR(CLR_HINT) : COLOR_PAIR(CLR_VALUE));
         mvprintw(row, vstart, "%.*s", avail, label);
         attroff(st->has_cover ? COLOR_PAIR(CLR_HINT) : COLOR_PAIR(CLR_VALUE));
@@ -1051,7 +1056,7 @@ static void ebuf_insert_wchar(EditBuf *e, wchar_t wc)
     ebuf_delete_selection_raw(e);
     if (e->len + n >= MAX_FIELD) return;
     memmove(e->buf + e->cursor + n, e->buf + e->cursor,
-            e->len - e->cursor + 1);
+    e->len - e->cursor + 1);
     memcpy(e->buf + e->cursor, utf8, n);
     e->cursor += n;
     e->len    += n;
@@ -1065,7 +1070,7 @@ static void ebuf_delete_word_left(EditBuf *e)
     ebuf_push_undo(e);
     int nbytes = e->cursor - dest;
     memmove(e->buf + dest, e->buf + e->cursor,
-            e->len - e->cursor + 1);
+    e->len - e->cursor + 1);
     e->len    -= nbytes;
     e->cursor  = dest;
 }
@@ -1078,7 +1083,7 @@ static void ebuf_delete(EditBuf *e)
     int new_cursor = utf8_prev_cp(e->buf, e->cursor);
     int nbytes = e->cursor - new_cursor;
     memmove(e->buf + new_cursor, e->buf + e->cursor,
-            e->len - e->cursor + 1);
+    e->len - e->cursor + 1);
     e->cursor  = new_cursor;
     e->len    -= nbytes;
 }
@@ -1091,7 +1096,7 @@ static void ebuf_delete_fwd(EditBuf *e)
     int nbytes = utf8_seqlen((unsigned char)e->buf[e->cursor]);
     if (e->cursor + nbytes > e->len) nbytes = e->len - e->cursor;
     memmove(e->buf + e->cursor, e->buf + e->cursor + nbytes,
-            e->len - e->cursor - nbytes + 1);
+    e->len - e->cursor - nbytes + 1);
     e->len -= nbytes;
 }
 
@@ -1103,7 +1108,7 @@ static void ebuf_insert_str(EditBuf *e, const char *s, int len)
     for (int i = 0; i < len; i++) {
         if (e->len >= MAX_FIELD - 1) break;
         memmove(e->buf + e->cursor + 1, e->buf + e->cursor,
-                e->len - e->cursor + 1);
+        e->len - e->cursor + 1);
         e->buf[e->cursor++] = s[i];
         e->len++;
     }
@@ -1112,10 +1117,10 @@ static void ebuf_insert_str(EditBuf *e, const char *s, int len)
 static void ebuf_paste_clipboard(EditBuf *e)
 {
     FILE *p = popen(
-        "xclip -o -selection clipboard 2>/dev/null ||"
-        " xsel -bo 2>/dev/null ||"
-        " wl-paste --no-newline 2>/dev/null",
-        "r");
+    "xclip -o -selection clipboard 2>/dev/null ||"
+    " xsel -bo 2>/dev/null ||"
+    " wl-paste --no-newline 2>/dev/null",
+    "r");
     if (!p) return;
 
     char clip[MAX_FIELD];
@@ -1144,52 +1149,257 @@ static const char *field_labels[NUM_FIELDS] = {
 static void print_help(void)
 {
     printf(
-        ANSI_BOLD "flec" ANSI_RESET ", "
-        "FLAC metadata editor in C.\n"
+    ANSI_BOLD "flec" ANSI_RESET ", "
+    "FLAC metadata editor in C.\n"
 
-        "\n"
-        "Usage: flec [OPTIONS]\n"
-        "\n"
+    "\n"
+    "Usage: flec [OPTIONS]\n"
+    "\n"
 
-        ANSI_UNDERLINE "Options:" ANSI_RESET "\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "\n"
+    ANSI_UNDERLINE "Options:" ANSI_RESET "\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "\n"
 
-        ANSI_UNDERLINE "Keybinds:" ANSI_RESET "\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "\n"
+    ANSI_UNDERLINE "Keybinds:" ANSI_RESET "\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "\n"
 
-        ANSI_UNDERLINE "Dependencies:" ANSI_RESET "\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n"
-        "  " COL "  %s\n",
+    ANSI_UNDERLINE "Dependencies:" ANSI_RESET "\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n"
+    "  " COL "  %s\n",
 
-        "-f, --flac  <dir>...",     "Directories to search for FLAC files.",
-        "-c, --cover <dir>...",    "Directories to search for cover images.",
-        "-nf, --no-fzf <path>",    "Skip fzf and open a specific FLAC file directly.",
-        "-h, --help",              "Show this message.",
+    "-f, --flac  <dir>...",     "Directories to search for FLAC files.",
+    "-c, --cover <dir>...",     "Directories to search for cover images.",
+    "-o, --open  <path>",       "Open a specific FLAC file directly (works in any mode).",
+    "-nf, --no-fzf",            "Disable fzf; use manual path input instead.",
+    "-h, --help",               "Show this message.",
 
-        "j / k / arrows",          "Navigate fields.",
-        "Enter / e / a",           "Edit selected field.",
-        "Escape",                  "Cancel current edit.",
-        "Ctrl+S",                  "Save changes to file.",
-        "Ctrl+X",                  "Discard pending cover path.",
-        "r",                       "Search another FLAC file to edit.",
-        "q",                       "Quit (prompts if there are unsaved changes).",
+    "j / k / arrows",           "Navigate fields.",
+    "Enter / e / a",            "Edit selected field.",
+    "Escape",                   "Cancel current edit.",
+    "Ctrl+S",                   "Save changes to file.",
+    "Ctrl+X",                   "Discard pending cover path.",
+    "r",                        "Search another FLAC file to edit.",
+    "q",                        "Quit (prompts if there are unsaved changes).",
 
-        "libFLAC",                 "Used for FLAC stream metadata editing (read/write).",
-        "ncurses",                 "Used for terminal UI rendering.",
-        "fzf",                     "Nice file picker (optional)."
+    "libFLAC",                  "Used for FLAC stream metadata editing (read/write).",
+    "ncurses",                  "Used for terminal UI rendering.",
+    "fzf",                      "Nice file picker (optional)."
     );
+}
+
+static int prompt_path_ncurses(char *out, size_t outsz)
+{
+    EditBuf ebuf;
+    ebuf_init(&ebuf, "");
+    char status_msg[256] = "";
+    int  status_err = 0;
+
+    for (;;) {
+        if (g_need_redraw) { g_need_redraw = 0; clearok(stdscr, TRUE); }
+
+        int rows, cols;
+        getmaxyx(stdscr, rows, cols);
+        erase();
+
+        draw_border(rows, cols);
+
+        attron(COLOR_PAIR(CLR_HEADER) | A_BOLD);
+        mvprintw(1, 2, "flec");
+        attroff(COLOR_PAIR(CLR_HEADER) | A_BOLD);
+
+        attron(COLOR_PAIR(CLR_BORDER));
+        mvhline(2, 1, ACS_HLINE, cols - 2);
+        attroff(COLOR_PAIR(CLR_BORDER));
+
+        int fcol   = 4;
+        int fwidth = cols - 6;
+        int row    = rows / 2 - 1;
+
+        attron(COLOR_PAIR(CLR_HINT));
+        mvprintw(row - 2, fcol,
+        "Enter FLAC file path  (Escape to quit):");
+        attroff(COLOR_PAIR(CLR_HINT));
+
+        draw_field(row, fcol, fwidth,
+        "File path", ebuf.buf, 1, 1,
+        ebuf.cursor, ebuf.sel_anchor);
+
+        attron(COLOR_PAIR(CLR_HINT));
+        mvprintw(row + 1, fcol,
+        "Tip: ~/relative or /absolute paths are both accepted.");
+        attroff(COLOR_PAIR(CLR_HINT));
+
+        if (status_msg[0])
+        draw_status(rows, cols, status_msg, status_err);
+
+        curs_set(1);
+        int vstart  = fcol + 10;
+        int vwidth  = fwidth - 10 - 2;
+        int scroll  = utf8_compute_scroll(ebuf.buf, ebuf.cursor, vwidth);
+        int cur_col = utf8_width_range(ebuf.buf, scroll, ebuf.cursor);
+        move(row, vstart + cur_col);
+
+        refresh();
+
+        wint_t wch;
+        int chtype = get_wch(&wch);
+
+        switch (wch) {
+
+        case 19:
+        case '\n':
+        case KEY_ENTER:
+            sel_clear(&ebuf);
+            if (ebuf.len == 0) {
+                snprintf(status_msg, sizeof(status_msg),
+                "[!!] Path cannot be empty.");
+                status_err = 1;
+                break;
+            }
+            snprintf(out, outsz, "%s", ebuf.buf);
+            expand_tilde(out, outsz);
+            return 1;
+
+        case 27:
+            return 0;
+
+        case 1:
+            ebuf_select_all(&ebuf);
+            break;
+
+        case 22:
+            ebuf_paste_clipboard(&ebuf);
+            break;
+
+        case 26:
+            ebuf_undo(&ebuf);
+            break;
+
+        case KEY_BACKSPACE:
+        case 127:
+            ebuf_delete(&ebuf);
+            break;
+
+        case 8:
+        case MY_KEY_CTRL_BACKSPACE:
+            ebuf_delete_word_left(&ebuf);
+            break;
+
+        case KEY_DC:
+            ebuf_delete_fwd(&ebuf);
+            break;
+
+        case 11:
+            sel_clear(&ebuf);
+            ebuf_push_undo(&ebuf);
+            ebuf.buf[ebuf.cursor] = '\0';
+            ebuf.len = ebuf.cursor;
+            break;
+
+        case 21:
+            sel_clear(&ebuf);
+            ebuf_push_undo(&ebuf);
+            memmove(ebuf.buf, ebuf.buf + ebuf.cursor,
+            ebuf.len - ebuf.cursor + 1);
+            ebuf.len    -= ebuf.cursor;
+            ebuf.cursor  = 0;
+            break;
+
+        case KEY_LEFT:
+            if (sel_active(&ebuf)) {
+                ebuf.cursor = sel_lo(&ebuf);
+                sel_clear(&ebuf);
+            } else if (ebuf.cursor > 0) {
+                ebuf.cursor--;
+            }
+            break;
+
+        case KEY_RIGHT:
+            if (sel_active(&ebuf)) {
+                ebuf.cursor = sel_hi(&ebuf);
+                sel_clear(&ebuf);
+            } else if (ebuf.cursor < ebuf.len) {
+                ebuf.cursor++;
+            }
+            break;
+
+        case KEY_SLEFT:
+            if (ebuf.cursor > 0) {
+                sel_start(&ebuf);
+                ebuf.cursor--;
+                if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+            }
+            break;
+
+        case KEY_SRIGHT:
+            if (ebuf.cursor < ebuf.len) {
+                sel_start(&ebuf);
+                ebuf.cursor++;
+                if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+            }
+            break;
+
+        case MY_KEY_CTRL_LEFT:
+            ebuf.cursor = word_skip_left(&ebuf);
+            sel_clear(&ebuf);
+            break;
+
+        case MY_KEY_CTRL_RIGHT:
+            ebuf.cursor = word_skip_right(&ebuf);
+            sel_clear(&ebuf);
+            break;
+
+            case MY_KEY_CTRL_SHIFT_LEFT: {
+                int dest = word_skip_left(&ebuf);
+                if (dest != ebuf.cursor) {
+                    sel_start(&ebuf);
+                    ebuf.cursor = dest;
+                    if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                }
+                break;
+            }
+
+            case MY_KEY_CTRL_SHIFT_RIGHT: {
+                int dest = word_skip_right(&ebuf);
+                if (dest != ebuf.cursor) {
+                    sel_start(&ebuf);
+                    ebuf.cursor = dest;
+                    if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                }
+                break;
+            }
+
+        case KEY_HOME:
+            ebuf.cursor = 0;
+            sel_clear(&ebuf);
+            break;
+
+        case KEY_END:
+            ebuf.cursor = ebuf.len;
+            sel_clear(&ebuf);
+            break;
+
+        case KEY_RESIZE:
+            break;
+
+        default:
+            if (chtype == OK && (wchar_t)wch >= 32)
+            ebuf_insert_wchar(&ebuf, (wchar_t)wch);
+            break;
+        }
+    }
 }
 
 int main(int argc, char **argv)
@@ -1201,47 +1411,54 @@ int main(int argc, char **argv)
     int  flac_dirs_count = 0;
     char cover_dirs[MAX_DIRS][MAX_PATH];
     int  cover_dirs_count = 0;
-    char no_fzf_path[MAX_PATH] = "";
+    char open_path[MAX_PATH] = "";
+    int  no_fzf_mode = 0;
 
     typedef enum { MODE_NONE, MODE_FLAC_DIRS, MODE_COVER_DIRS } ParseMode;
     ParseMode mode = MODE_NONE;
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-f")     == 0 ||
-            strcmp(argv[i], "--flac") == 0) {
+        strcmp(argv[i], "--flac") == 0) {
             mode = MODE_FLAC_DIRS;
 
         } else if (strcmp(argv[i], "-c")      == 0 ||
-                   strcmp(argv[i], "--cover") == 0) {
+        strcmp(argv[i], "--cover") == 0) {
             mode = MODE_COVER_DIRS;
 
         } else if (strcmp(argv[i], "-h")     == 0 ||
-                   strcmp(argv[i], "--help") == 0) {
+        strcmp(argv[i], "--help") == 0) {
             print_help();
             return 0;
 
-        } else if (strcmp(argv[i], "-nf")       == 0 ||
-                   strcmp(argv[i], "--no-fzf") == 0) {
+        } else if (strcmp(argv[i], "-o")     == 0 ||
+        strcmp(argv[i], "--open") == 0) {
             i++;
             if (i >= argc || argv[i][0] == '-') {
                 fprintf(stderr,
-                    "Error: %s requires exactly one path argument.\n"
-                    "  Example: flec -nf \"~/Music/file.flac\"\n",
-                    argv[i - 1]);
+                "Error: %s requires exactly one path argument.\n"
+                "  Example: flec -o \"~/Music/file.flac\"\n",
+                argv[i - 1]);
                 return 1;
             }
-            strncpy(no_fzf_path, argv[i], MAX_PATH - 1);
-            no_fzf_path[MAX_PATH - 1] = '\0';
+            strncpy(open_path, argv[i], MAX_PATH - 1);
+            open_path[MAX_PATH - 1] = '\0';
+            mode = MODE_NONE;
+
+        } else if (strcmp(argv[i], "-nf")       == 0 ||
+        strcmp(argv[i], "--no-fzf") == 0) {
+            no_fzf_mode = 1;
             mode = MODE_NONE;
 
         } else if (argv[i][0] == '-') {
             fprintf(stderr, "Unknown option: %s\n", argv[i]);
             fprintf(stderr,
-                "Usage: flec [OPTIONS]\n"
-                "  -f,  --flac   <dir>...  directories to search for FLAC files\n"
-                "  -c,  --cover  <dir>...  directories to search for cover images\n"
-                "  -nf, --no-fzf <path>    open this FLAC file directly\n"
-                "  -h,  --help             show help message\n");
+            "Usage: flec [OPTIONS]\n"
+            "  -f,  --flac   <dir>...  directories to search for FLAC files\n"
+            "  -c,  --cover  <dir>...  directories to search for cover images\n"
+            "  -o,  --open   <path>    open this FLAC file directly\n"
+            "  -nf, --no-fzf           disable fzf; use manual path input\n"
+            "  -h,  --help             show help message\n");
             return 1;
 
         } else {
@@ -1249,7 +1466,7 @@ int main(int argc, char **argv)
             if (mode == MODE_FLAC_DIRS) {
                 if (flac_dirs_count >= MAX_DIRS) {
                     fprintf(stderr, "Error: too many -f directories (max %d).\n",
-                            MAX_DIRS);
+                    MAX_DIRS);
                     return 1;
                 }
                 strncpy(flac_dirs[flac_dirs_count], argv[i], MAX_PATH - 1);
@@ -1258,7 +1475,7 @@ int main(int argc, char **argv)
             } else if (mode == MODE_COVER_DIRS) {
                 if (cover_dirs_count >= MAX_DIRS) {
                     fprintf(stderr, "Error: too many -c directories (max %d).\n",
-                            MAX_DIRS);
+                    MAX_DIRS);
                     return 1;
                 }
                 strncpy(cover_dirs[cover_dirs_count], argv[i], MAX_PATH - 1);
@@ -1266,9 +1483,10 @@ int main(int argc, char **argv)
                 cover_dirs_count++;
             } else {
                 fprintf(stderr,
-                    "Unexpected argument: %s\n"
-                    "Use -f to specify FLAC directories or -nf for a direct path.\n",
-                    argv[i]);
+                "Unexpected argument: %s\n"
+                "Use -f to specify FLAC directories, -o for a direct path,"
+                " or -nf for no-fzf mode.\n",
+                argv[i]);
                 return 1;
             }
         }
@@ -1306,49 +1524,6 @@ int main(int argc, char **argv)
         }
     }
 
-    if (no_fzf_path[0] != '\0') {
-
-        expand_tilde(no_fzf_path, MAX_PATH);
-        struct stat fs;
-        if (stat(no_fzf_path, &fs) != 0) {
-            fprintf(stderr, "Error: -nf path not found: '%s'\n", no_fzf_path);
-            return 1;
-        }
-        if (!S_ISREG(fs.st_mode)) {
-            fprintf(stderr, "Error: -nf path is not a regular file: '%s'\n",
-                    no_fzf_path);
-            return 1;
-        }
-        snprintf(st.flac_path, MAX_PATH, "%s", no_fzf_path);
-    } else {
-
-        if (!run_fzf_tty(st.flac_path, MAX_PATH, flac_dirs, flac_dirs_count)) {
-            fprintf(stderr,
-                "Usage: flec [OPTIONS]\n"
-                "  -f,  --flac   <dir>...  directories to search for FLAC files\n"
-                "  -c,  --cover  <dir>...  directories to search for cover images\n"
-                "  -nf, --no-fzf <path>    open this FLAC file directly\n"
-                "  -h,  --help             show help message\n"
-                "  (fzf must be installed for interactive picking)\n");
-            return 1;
-        }
-    }
-
-    make_display_path(st.flac_path, st.display_path, MAX_PATH);
-
-    if (!flec_load(&st)) {
-        fprintf(stderr,
-                "Error: cannot read FLAC metadata from '%s'.\n"
-                "Make sure the file exists and is a valid FLAC file.\n",
-                st.flac_path);
-        return 1;
-    }
-    memcpy(st.orig_title,      st.title,      MAX_FIELD);
-    memcpy(st.orig_artist,     st.artist,     MAX_FIELD);
-    memcpy(st.orig_album,      st.album,      MAX_FIELD);
-    memcpy(st.orig_date,       st.date,       MAX_FIELD);
-    memcpy(st.orig_cover_path, st.cover_path, MAX_PATH);
-
     setlocale(LC_ALL, "");
     initscr();
     raw();
@@ -1369,6 +1544,68 @@ int main(int argc, char **argv)
     if (has_colors()) init_colors();
 
     int have_fzf = fzf_available();
+    int use_fzf  = have_fzf && !no_fzf_mode;
+
+    if (open_path[0] != '\0') {
+
+        expand_tilde(open_path, MAX_PATH);
+        struct stat fs;
+        if (stat(open_path, &fs) != 0) {
+            endwin();
+            fprintf(stderr, "Error: -o path not found: '%s'\n", open_path);
+            return 1;
+        }
+        if (!S_ISREG(fs.st_mode)) {
+            endwin();
+            fprintf(stderr, "Error: -o path is not a regular file: '%s'\n",
+            open_path);
+            return 1;
+        }
+        snprintf(st.flac_path, MAX_PATH, "%s", open_path);
+
+    } else if (no_fzf_mode) {
+
+        if (!prompt_path_ncurses(st.flac_path, MAX_PATH)) {
+            endwin();
+            return 0;
+        }
+        struct stat fs;
+        if (stat(st.flac_path, &fs) != 0) {
+            endwin();
+            fprintf(stderr, "Error: path not found: '%s'\n", st.flac_path);
+            return 1;
+        }
+        if (!S_ISREG(fs.st_mode)) {
+            endwin();
+            fprintf(stderr, "Error: path is not a regular file: '%s'\n",
+            st.flac_path);
+            return 1;
+        }
+
+    } else {
+
+        if (!run_fzf_tty(st.flac_path, MAX_PATH, flac_dirs, flac_dirs_count)) {
+            endwin();
+            return 0;
+        }
+    }
+
+    make_display_path(st.flac_path, st.display_path, MAX_PATH);
+
+    if (!flec_load(&st)) {
+        endwin();
+        fprintf(stderr,
+        "Error: cannot read FLAC metadata from '%s'.\n"
+        "Make sure the file exists and is a valid FLAC file.\n",
+        st.flac_path);
+        return 1;
+    }
+    memcpy(st.orig_title,      st.title,      MAX_FIELD);
+    memcpy(st.orig_artist,     st.artist,     MAX_FIELD);
+    memcpy(st.orig_album,      st.album,      MAX_FIELD);
+    memcpy(st.orig_date,       st.date,       MAX_FIELD);
+    memcpy(st.orig_cover_path, st.cover_path, MAX_PATH);
+
     int selected = 0;
     int editing  = 0;
     EditBuf ebuf;
@@ -1408,11 +1645,11 @@ int main(int argc, char **argv)
             int cur = (edit) ? ebuf.cursor : 0;
             int anch = (edit) ? ebuf.sel_anchor : -1;
             draw_field(field_rows[i], fcol, fwidth,
-                       field_labels[i], val, act, edit, cur, anch);
+            field_labels[i], val, act, edit, cur, anch);
             if (i == FIELD_DATE && act && !edit) {
                 attron(COLOR_PAIR(CLR_HINT));
                 mvprintw(field_rows[i] + 1, fcol,
-                    "Format: YYYY  or  YYYY-MM  or  YYYY-MM-DD");
+                "Format: YYYY  or  YYYY-MM  or  YYYY-MM-DD");
                 attroff(COLOR_PAIR(CLR_HINT));
             }
         }
@@ -1423,8 +1660,8 @@ int main(int argc, char **argv)
             int edit = (editing && selected == i);
             if (edit) {
                 draw_field(field_rows[i], fcol, fwidth,
-                           field_labels[i], ebuf.buf, act, edit,
-                           ebuf.cursor, ebuf.sel_anchor);
+                field_labels[i], ebuf.buf, act, edit,
+                ebuf.cursor, ebuf.sel_anchor);
             } else {
                 if (act) {
                     attron(COLOR_PAIR(CLR_HINT) | A_BOLD);
@@ -1434,14 +1671,14 @@ int main(int argc, char **argv)
                 draw_cover_indicator(field_rows[i], fcol, cols, &st);
                 if (act) {
                     attron(COLOR_PAIR(CLR_HINT));
-                    if (have_fzf) {
+                    if (use_fzf) {
                         mvprintw(field_rows[i] + 1, fcol,
-                            "Press Enter to browse with fzf"
-                            "  (jpg / png / bmp / webp)");
+                        "Press Enter to browse with fzf"
+                        "  (jpg / png / bmp / webp)");
                     } else {
                         mvprintw(field_rows[i] + 1, fcol,
-                            "Supported image extensions:"
-                            "  (jpg / png / bmp / webp)");
+                        "Press Enter to type a path"
+                        "  (jpg / png / bmp / webp)");
                     }
                     attroff(COLOR_PAIR(CLR_HINT));
                 }
@@ -1451,12 +1688,12 @@ int main(int argc, char **argv)
         if (st.dirty) {
             attron(COLOR_PAIR(CLR_LABEL) | A_BOLD);
             mvprintw(4, cols - (int)strlen(SYM_UNSAVED) - 3,
-                     " %s ", SYM_UNSAVED);
+            " %s ", SYM_UNSAVED);
             attroff(COLOR_PAIR(CLR_LABEL) | A_BOLD);
         }
 
         if (status_msg[0])
-            draw_status(rows, cols, status_msg, status_err);
+        draw_status(rows, cols, status_msg, status_err);
 
         if (editing) {
             curs_set(1);
@@ -1512,19 +1749,19 @@ int main(int argc, char **argv)
                         const char *err = validate_image_path(ebuf.buf);
                         if (err) {
                             snprintf(status_msg, sizeof(status_msg),
-                                     "[!!] %s", err);
+                            "[!!] %s", err);
                             status_err = 1;
                         } else {
                             strncpy(st.cover_path, ebuf.buf, MAX_PATH - 1);
                             st.cover_path[MAX_PATH - 1] = '\0';
                             st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
-                                        strcmp(st.artist,     st.orig_artist)     != 0 ||
-                                        strcmp(st.album,      st.orig_album)      != 0 ||
-                                        strcmp(st.date,       st.orig_date)       != 0 ||
-                                        strcmp(st.cover_path, st.orig_cover_path) != 0);
+                            strcmp(st.artist,     st.orig_artist)     != 0 ||
+                            strcmp(st.album,      st.orig_album)      != 0 ||
+                            strcmp(st.date,       st.orig_date)       != 0 ||
+                            strcmp(st.cover_path, st.orig_cover_path) != 0);
                             editing  = 0;
                             snprintf(status_msg, sizeof(status_msg),
-                                     "Cover path set successfully.");
+                            "Cover path set successfully.");
                             status_err = 0;
                         }
                     }
@@ -1532,13 +1769,13 @@ int main(int argc, char **argv)
                     strncpy(fields_ptr[selected], ebuf.buf, MAX_FIELD - 1);
                     fields_ptr[selected][MAX_FIELD - 1] = '\0';
                     st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
-                                strcmp(st.artist,     st.orig_artist)     != 0 ||
-                                strcmp(st.album,      st.orig_album)      != 0 ||
-                                strcmp(st.date,       st.orig_date)       != 0 ||
-                                strcmp(st.cover_path, st.orig_cover_path) != 0);
+                    strcmp(st.artist,     st.orig_artist)     != 0 ||
+                    strcmp(st.album,      st.orig_album)      != 0 ||
+                    strcmp(st.date,       st.orig_date)       != 0 ||
+                    strcmp(st.cover_path, st.orig_cover_path) != 0);
                     editing  = 0;
                     snprintf(status_msg, sizeof(status_msg),
-                             "%s field set successfully.", field_labels[selected]);
+                    "%s field set successfully.", field_labels[selected]);
                     status_err = 0;
                 }
                 if (wch == 19 && !status_err) {
@@ -1617,25 +1854,25 @@ int main(int argc, char **argv)
                 sel_clear(&ebuf);
                 break;
 
-            case MY_KEY_CTRL_SHIFT_LEFT: {
-                int dest = word_skip_left(&ebuf);
-                if (dest != ebuf.cursor) {
-                    sel_start(&ebuf);
-                    ebuf.cursor = dest;
-                    if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                case MY_KEY_CTRL_SHIFT_LEFT: {
+                    int dest = word_skip_left(&ebuf);
+                    if (dest != ebuf.cursor) {
+                        sel_start(&ebuf);
+                        ebuf.cursor = dest;
+                        if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                    }
+                    break;
                 }
-                break;
-            }
 
-            case MY_KEY_CTRL_SHIFT_RIGHT: {
-                int dest = word_skip_right(&ebuf);
-                if (dest != ebuf.cursor) {
-                    sel_start(&ebuf);
-                    ebuf.cursor = dest;
-                    if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                case MY_KEY_CTRL_SHIFT_RIGHT: {
+                    int dest = word_skip_right(&ebuf);
+                    if (dest != ebuf.cursor) {
+                        sel_start(&ebuf);
+                        ebuf.cursor = dest;
+                        if (ebuf.cursor == ebuf.sel_anchor) sel_clear(&ebuf);
+                    }
+                    break;
                 }
-                break;
-            }
 
             case KEY_HOME:
                 ebuf.cursor = 0;
@@ -1658,14 +1895,14 @@ int main(int argc, char **argv)
                 sel_clear(&ebuf);
                 ebuf_push_undo(&ebuf);
                 memmove(ebuf.buf, ebuf.buf + ebuf.cursor,
-                        ebuf.len - ebuf.cursor + 1);
+                ebuf.len - ebuf.cursor + 1);
                 ebuf.len    -= ebuf.cursor;
                 ebuf.cursor  = 0;
                 break;
 
             default:
                 if (chtype == OK && (wchar_t)wch >= 32)
-                    ebuf_insert_wchar(&ebuf, (wchar_t)wch);
+                ebuf_insert_wchar(&ebuf, (wchar_t)wch);
                 break;
             }
             continue;
@@ -1676,7 +1913,7 @@ int main(int argc, char **argv)
         case 'Q':
             if (st.dirty) {
                 draw_warn(rows, cols,
-                    "Unsaved changes! Press Q again to quit, any key to cancel.");
+                "Unsaved changes! Press Q again to quit, any key to cancel.");
                 refresh();
                 { wint_t c2; get_wch(&c2);
                 if (c2 == 'q' || c2 == 'Q') running = 0; }
@@ -1704,10 +1941,10 @@ int main(int argc, char **argv)
         case 'A':
         case 'e':
         case 'E':
-            if (selected == FIELD_COVER && have_fzf) {
+            if (selected == FIELD_COVER && use_fzf) {
                 char img_path[MAX_PATH] = "";
                 int picked = run_fzf_cover_tty(img_path, MAX_PATH,
-                                               cover_dirs, cover_dirs_count);
+                cover_dirs, cover_dirs_count);
                 clearok(stdscr, TRUE);
                 if (picked && img_path[0] != '\0') {
                     const char *err = validate_image_path(img_path);
@@ -1718,12 +1955,12 @@ int main(int argc, char **argv)
                         strncpy(st.cover_path, img_path, MAX_PATH - 1);
                         st.cover_path[MAX_PATH - 1] = '\0';
                         st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
-                                    strcmp(st.artist,     st.orig_artist)     != 0 ||
-                                    strcmp(st.album,      st.orig_album)      != 0 ||
-                                    strcmp(st.date,       st.orig_date)       != 0 ||
-                                    strcmp(st.cover_path, st.orig_cover_path) != 0);
+                        strcmp(st.artist,     st.orig_artist)     != 0 ||
+                        strcmp(st.album,      st.orig_album)      != 0 ||
+                        strcmp(st.date,       st.orig_date)       != 0 ||
+                        strcmp(st.cover_path, st.orig_cover_path) != 0);
                         snprintf(status_msg, sizeof(status_msg),
-                                 "Cover path set successfully.");
+                        "Cover path set successfully.");
                         status_err = 0;
                     }
                 }
@@ -1757,19 +1994,26 @@ int main(int argc, char **argv)
                 strncpy(st.cover_path, st.orig_cover_path, MAX_PATH - 1);
                 st.cover_path[MAX_PATH - 1] = '\0';
                 st.dirty = (strcmp(st.title,      st.orig_title)      != 0 ||
-                            strcmp(st.artist,     st.orig_artist)     != 0 ||
-                            strcmp(st.album,      st.orig_album)      != 0 ||
-                            strcmp(st.date,       st.orig_date)       != 0 ||
-                            strcmp(st.cover_path, st.orig_cover_path) != 0);
+                strcmp(st.artist,     st.orig_artist)     != 0 ||
+                strcmp(st.album,      st.orig_album)      != 0 ||
+                strcmp(st.date,       st.orig_date)       != 0 ||
+                strcmp(st.cover_path, st.orig_cover_path) != 0);
                 status_msg[0] = '\0';
             }
             break;
 
         case 'r':
         case 'R':
+            if (!use_fzf) {
+                draw_warn(rows, cols,
+                "The R keybind is not supported in NO-FZF mode.");
+                refresh();
+                { wint_t rc2; get_wch(&rc2); (void)rc2; }
+                break;
+            }
             if (st.dirty) {
                 draw_warn(rows, cols,
-                    "Unsaved changes! Press R again to discard, any key to cancel.");
+                "Unsaved changes! Press R again to discard, any key to cancel.");
                 refresh();
                 { wint_t rc2; get_wch(&rc2);
                 if (rc2 != 'r' && rc2 != 'R') break; }
@@ -1777,7 +2021,7 @@ int main(int argc, char **argv)
             {
                 char new_path[MAX_PATH] = "";
                 int picked = run_fzf_tty(new_path, MAX_PATH,
-                                         flac_dirs, flac_dirs_count);
+                flac_dirs, flac_dirs_count);
                 clearok(stdscr, TRUE);
                 if (picked && new_path[0] != '\0') {
                     memset(&st, 0, sizeof(st));
@@ -1793,10 +2037,10 @@ int main(int argc, char **argv)
                         editing    = 0;
                         status_err = 0;
                         snprintf(status_msg, sizeof(status_msg),
-                                 "Now viewing: %s", st.display_path);
+                        "Now viewing: %s", st.display_path);
                     } else {
                         snprintf(status_msg, sizeof(status_msg),
-                                 "[!!] Cannot read FLAC metadata from selected file.");
+                        "[!!] Cannot read FLAC metadata from selected file.");
                         status_err = 1;
                     }
                 }
